@@ -1,0 +1,40 @@
+# ──────────────────────────────────────────────
+# MASS-MUTUAL AI Code Impact Analysis Assistant
+# Dependencies — Phase 1 through 8
+# ──────────────────────────────────────────────
+
+# --- Web Framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# --- Data Validation & Settings ---
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# --- Environment ---
+python-dotenv>=1.0.0
+
+# --- LLM SDKs ---
+openai>=1.30.0            # Also used as unified client for Gemini & Anthropic
+anthropic>=0.30.0
+# Note: Google Gemini uses its OpenAI-compatible endpoint, so no extra SDK needed
+
+# --- HTTP Client ---
+httpx>=0.27.0
+
+# --- Resilience / Retry ---
+tenacity>=8.0.0
+
+# --- Vector Database (Phase 3) ---
+chromadb>=0.5.0
+
+# --- Local Embeddings (Phase 3 — zero data-leakage option) ---
+sentence-transformers>=3.0.0
+
+# --- Concurrency (Phase 8 — parallel embedding batches) ---
+# concurrent.futures is part of stdlib, no extra package needed
+
+# --- Testing ---
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx  # also used by FastAPI TestClient
