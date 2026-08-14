@@ -18,7 +18,7 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
-    message: '🚀 Code Impact Analysis Backend API is running',
+    message: 'Code Impact Analysis Backend API is running',
     endpoints: {
       impactAnalysis: 'POST /api/impact-analysis',
       preReview: 'POST /api/pre-review'
@@ -32,5 +32,5 @@ app.use('/api', apiRoutes);
 // create a port for running our application lord-parmount.
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Backend Server running on http://localhost:${PORT}`);
+  console.log(`Backend Server running on http://localhost:${PORT}`);
 });
