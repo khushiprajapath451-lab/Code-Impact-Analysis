@@ -173,7 +173,7 @@ export const generatePreReview = async (rawGitDiff, requirementId, filesTouched)
    - Backward compatibility preserved: Existing low-value carts (< $500) bypass 2FA requirement.
 
 3. **Test Gaps**
-   - ⚠️ Missing test case covering edge case when \`totpToken\` is invalid or expired.
+   - Missing test case covering edge case when \`totpToken\` is invalid or expired.
    - Recommendation: Add test in \`tests/checkout.test.js\` asserting 403 HTTP status for invalid OTP.
 
 4. **Draft PR Description**
