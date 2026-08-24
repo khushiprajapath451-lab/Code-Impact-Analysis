@@ -27,6 +27,8 @@ from app.agents.prompts.impact_prompts import (
 )
 from app.models.impact_models import (
     ChangeType,
+    ComponentEvidence,
+    EvidenceConfidence,
     ExtractedConcepts,
     ImpactAnalysisReport,
     ImpactedComponent,
@@ -354,6 +356,16 @@ class ImpactAnalysisAgent(BaseAgent):
                     start_line=item.start_line,
                     end_line=item.end_line,
                     language=item.language,
+                    evidence=ComponentEvidence(
+                        supported=True,
+                        chunk_id=item.chunk_id,
+                        file_path=item.file_path,
+                        entity_name=item.entity_name,
+                        start_line=item.start_line,
+                        end_line=item.end_line,
+                        similarity_score=item.similarity,
+                        confidence=EvidenceConfidence.HIGH,
+                    ),
                 )
             )
 
@@ -510,9 +522,9 @@ class ImpactAnalysisAgent(BaseAgent):
         concepts: ExtractedConcepts,
         search_results: List[SearchResultItem],
     ) -> ImpactAnalysisReport:
-        """Convert parsed LLM JSON into a validated ImpactAnalysisReport."""
+        """Convert parsed LLM JSON into a validated ImpactAnalysisReport with grounded evidence."""
         all_kw = concepts.explicit_keywords + concepts.implicit_keywords
-        
+
         data["requirement_id"] = requirement.requirement_id
         data["requirement_title"] = requirement.title
         data["extracted_keywords"] = all_kw
@@ -520,7 +532,18 @@ class ImpactAnalysisAgent(BaseAgent):
         data["search_results_count"] = len(search_results)
         if "core_intent_summary" not in data:
             data["core_intent_summary"] = concepts.core_intent
-        
+
+        # Ground every impacted component against retrieved search results
+        if "impacted_files" in data and isinstance(data["impacted_files"], list):
+            enriched_files = []
+            for item in data["impacted_files"]:
+                if isinstance(item, dict):
+                    enriched_item = self._match_impact_to_evidence(item, search_results)
+                    enriched_files.append(enriched_item)
+                else:
+                    enriched_files.append(item)
+            data["impacted_files"] = enriched_files
+
         try:
             return ImpactAnalysisReport.model_validate(data)
         except Exception as e:
@@ -532,5 +555,110 @@ class ImpactAnalysisAgent(BaseAgent):
                 extracted_keywords=all_kw,
                 domain_concepts=concepts.domain_concepts,
                 impacted_files=[],
-                overall_risk_level=RiskLevel.HIGH
+                overall_risk_level=RiskLevel.HIGH,
             )
+
+    @staticmethod
+    def _match_impact_to_evidence(
+        item_data: Dict[str, Any],
+        search_results: List[SearchResultItem],
+    ) -> Dict[str, Any]:
+        """
+        Match an LLM-reported impacted component against the retrieved search results.
+
+        Performs deterministic evidence grounding:
+          - High confidence: Exact file_path and exact entity_name match.
+          - Medium confidence: File path matches with entity ambiguity.
+          - Low confidence / Unsupported: No matching chunk in retrieved results (Inference).
+        """
+        if not search_results:
+            item_data["similarity_score"] = 0.0
+            item_data["start_line"] = 0
+            item_data["end_line"] = 0
+            item_data["evidence"] = {
+                "supported": False,
+                "chunk_id": None,
+                "file_path": item_data.get("file_path", ""),
+                "entity_name": item_data.get("entity_name", ""),
+                "start_line": None,
+                "end_line": None,
+                "similarity_score": 0.0,
+                "confidence": EvidenceConfidence.LOW.value,
+            }
+            return item_data
+
+        target_file = (item_data.get("file_path") or "").strip().replace("\\", "/").lower()
+        target_entity = (item_data.get("entity_name") or "").strip()
+
+        matched_chunk: Optional[SearchResultItem] = None
+        confidence = EvidenceConfidence.LOW
+
+        # 1. Exact Match: file_path AND entity_name
+        for r in search_results:
+            r_file = r.file_path.strip().replace("\\", "/").lower()
+            if r_file == target_file or r_file.endswith(target_file) or target_file.endswith(r_file):
+                if target_entity and r.entity_name == target_entity:
+                    matched_chunk = r
+                    confidence = EvidenceConfidence.HIGH
+                    break
+
+        # 2. Case-insensitive entity match on the same file
+        if not matched_chunk and target_entity:
+            for r in search_results:
+                r_file = r.file_path.strip().replace("\\", "/").lower()
+                if r_file == target_file or r_file.endswith(target_file) or target_file.endswith(r_file):
+                    if r.entity_name.lower() == target_entity.lower():
+                        matched_chunk = r
+                        confidence = EvidenceConfidence.HIGH
+                        break
+
+        # 3. Secondary Match: File matches, but entity is different/empty
+        if not matched_chunk:
+            file_matches = [
+                r for r in search_results
+                if (r.file_path.strip().replace("\\", "/").lower() == target_file
+                    or r.file_path.strip().replace("\\", "/").lower().endswith(target_file)
+                    or target_file.endswith(r.file_path.strip().replace("\\", "/").lower()))
+            ]
+            if file_matches:
+                # Pick the highest similarity chunk from the matched file
+                matched_chunk = max(file_matches, key=lambda x: x.similarity)
+                confidence = EvidenceConfidence.MEDIUM
+
+        if matched_chunk is not None:
+            # Grounded evidence from the verified retrieved chunk
+            item_data["file_path"] = matched_chunk.file_path
+            item_data["similarity_score"] = matched_chunk.similarity
+            item_data["start_line"] = matched_chunk.start_line
+            item_data["end_line"] = matched_chunk.end_line
+            item_data["language"] = matched_chunk.language
+            if "chunk_type" not in item_data or item_data["chunk_type"] == "general":
+                item_data["chunk_type"] = matched_chunk.chunk_type
+
+            item_data["evidence"] = {
+                "supported": True,
+                "chunk_id": matched_chunk.chunk_id,
+                "file_path": matched_chunk.file_path,
+                "entity_name": matched_chunk.entity_name,
+                "start_line": matched_chunk.start_line,
+                "end_line": matched_chunk.end_line,
+                "similarity_score": matched_chunk.similarity,
+                "confidence": confidence.value,
+            }
+        else:
+            # Unsupported / Inferred impact
+            item_data["similarity_score"] = 0.0
+            item_data["start_line"] = 0
+            item_data["end_line"] = 0
+            item_data["evidence"] = {
+                "supported": False,
+                "chunk_id": None,
+                "file_path": item_data.get("file_path", ""),
+                "entity_name": item_data.get("entity_name", ""),
+                "start_line": None,
+                "end_line": None,
+                "similarity_score": 0.0,
+                "confidence": EvidenceConfidence.LOW.value,
+            }
+
+        return item_data

@@ -55,7 +55,7 @@ async def analyse_impact(
     )
 
     try:
-        agent = ImpactAnalysisAgent()
+        agent = ImpactAnalysisAgent(use_llm_reasoning=True)
         report = agent.analyse_requirement(requirement)
 
     except FileNotFoundError as exc:

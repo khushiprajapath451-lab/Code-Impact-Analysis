@@ -43,6 +43,13 @@ class RiskLevel(str, Enum):
     LOW = "low"
 
 
+class EvidenceConfidence(str, Enum):
+    """Confidence level of evidence grounding for an impacted component."""
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 # ─── Input Models ────────────────────────────────────────────────────────────
 
 
@@ -124,6 +131,47 @@ class ExtractedConcepts(BaseModel):
     )
 
 
+# ─── Component Evidence ──────────────────────────────────────────────────────
+
+
+class ComponentEvidence(BaseModel):
+    """
+    Traceability evidence linking an impact claim to a retrieved code chunk.
+    """
+    supported: bool = Field(
+        default=False,
+        description="True if grounded in retrieved context; False if inferred.",
+    )
+    chunk_id: Optional[str] = Field(
+        default=None,
+        description="Deterministic ID of the supporting code chunk from vector store.",
+    )
+    file_path: str = Field(
+        default="",
+        description="File path verified from retrieved context.",
+    )
+    entity_name: str = Field(
+        default="",
+        description="Entity name verified from retrieved context.",
+    )
+    start_line: Optional[int] = Field(
+        default=None,
+        description="Starting line number from retrieved chunk.",
+    )
+    end_line: Optional[int] = Field(
+        default=None,
+        description="Ending line number from retrieved chunk.",
+    )
+    similarity_score: float = Field(
+        default=0.0,
+        description="Semantic similarity score (0.0 - 1.0) from retrieval.",
+    )
+    confidence: EvidenceConfidence = Field(
+        default=EvidenceConfidence.LOW,
+        description="Confidence of evidence grounding: high, medium, low.",
+    )
+
+
 # ─── Impacted Component ──────────────────────────────────────────────────────
 
 
@@ -151,6 +199,10 @@ class ImpactedComponent(BaseModel):
     start_line: int = Field(default=0)
     end_line: int = Field(default=0)
     language: str = Field(default="unknown")
+    evidence: Optional[ComponentEvidence] = Field(
+        default=None,
+        description="Evidence and grounding metadata for this impact.",
+    )
 
 
 # ─── Impact Analysis Report ──────────────────────────────────────────────────

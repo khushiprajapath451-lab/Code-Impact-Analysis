@@ -33,7 +33,7 @@ class MasterOrchestratorService:
 
     def __init__(self, state_file: str = ".state/orchestrator_state.json"):
         self.search_agent = EmbeddingSearchAgent()
-        self.impact_agent = ImpactAnalysisAgent()
+        self.impact_agent = ImpactAnalysisAgent(use_llm_reasoning=True)
         self.review_agent = CodeReviewAgent(search_agent=self.search_agent)
         self.pr_agent = TestAndPRAgent(search_agent=self.search_agent)
         
