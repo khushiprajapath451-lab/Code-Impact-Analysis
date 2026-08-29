@@ -633,10 +633,38 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
           {/* Quick Metrics Bar (Shown on Overview & Analytics) */}
           {(activeTab === "overview" || activeTab === "analytics") && (
             <div className="metric-grid" style={{ marginBottom: "22px" }}>
-              <MetricCard title="Connected Repos" value={liveConnectedRepos.toString()} subtitle={`${selectedRepo?.name || "impactiq-backend"} active`} color="#22C55E" />
-              <MetricCard title="Indexed Stories" value={liveRequirements.toString()} subtitle="Requirements parsed" color="#4F46E5" />
-              <MetricCard title="AI Pre-Review Score" value={liveAIReviewScore} subtitle="Average code validation" color="#F59E0B" />
-              <MetricCard title="Test Coverage" value={liveCoverage} subtitle={`${totalTrackedFiles} tracked source files`} color="#38BDF8" />
+              <MetricCard
+                title="Connected Repos"
+                value={liveConnectedRepos.toString()}
+                subtitle={`${selectedRepo?.name || "impactiq-backend"} active`}
+                color="#22C55E"
+                to="/files"
+                tooltip="Click to view and manage connected repository files"
+              />
+              <MetricCard
+                title="Indexed Stories"
+                value={liveRequirements.toString()}
+                subtitle="Requirements parsed"
+                color="#4F46E5"
+                to="/requirements"
+                tooltip="Click to configure and analyze requirement stories"
+              />
+              <MetricCard
+                title="AI Pre-Review Score"
+                value={liveAIReviewScore}
+                subtitle="Average code validation"
+                color="#F59E0B"
+                to="/code-review"
+                tooltip="Click to run Senior AI Code Pre-Review"
+              />
+              <MetricCard
+                title="Test Coverage"
+                value={liveCoverage}
+                subtitle={`${totalTrackedFiles} tracked source files`}
+                color="#38BDF8"
+                to="/analytics"
+                tooltip="Click to inspect test coverage and quality metrics"
+              />
             </div>
           )}
 
