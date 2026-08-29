@@ -9,6 +9,7 @@ import {
   handleAddExplicitFile,
   handleBatchAddExplicitFiles,
   handleDeleteExplicitFile,
+  handleClearAllRepoFiles,
 } from '../controllers/repoController.js';
 import { handleRegister, handleLogin, handleGetMe, handleUpdateIntegrations } from '../controllers/authController.js';
 
@@ -33,6 +34,10 @@ router.get('/history', handleGetHistory);
 router.get('/repositories/files', handleGetRepoFiles);
 router.post('/repositories/files', handleAddExplicitFile);
 router.post('/repositories/files/batch', handleBatchAddExplicitFiles);
+router.post('/repositories/files/clear-all', handleClearAllRepoFiles);
+router.post('/repositories/files/clear', handleClearAllRepoFiles);
+router.delete('/repositories/files/all', handleClearAllRepoFiles);
+router.post('/repositories/files/delete', handleDeleteExplicitFile);
 router.delete('/repositories/files/:fileId', handleDeleteExplicitFile);
 router.delete('/repositories/files', handleDeleteExplicitFile);
 

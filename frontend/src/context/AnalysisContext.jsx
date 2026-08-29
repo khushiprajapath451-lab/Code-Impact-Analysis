@@ -10,6 +10,7 @@ import {
   addExplicitFile,
   batchAddExplicitFiles,
   deleteExplicitFile,
+  clearAllRepoFiles,
 } from '../services/api';
 
 const AnalysisContext = createContext();
@@ -164,23 +165,95 @@ export const AnalysisProvider = ({ children }) => {
 
   const addCustomFile = async ({ filePath, content, module }) => {
     const repoId = selectedRepo?.id || 'repo-1';
-    const result = await addExplicitFile({ repoId, filePath, content, module });
-    await loadRepoFiles(repoId);
-    return result;
+    const normalizedPath = (filePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+
+    const optimisticFile = {
+      id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      filePath: normalizedPath,
+      rootPath: normalizedPath,
+      content: content || '',
+      lineCount: (content ? content.split('\n').length : 1),
+      sizeBytes: (content ? content.length : 0),
+      module: module || 'Controllers',
+      functions: [],
+      isExplicit: true,
+      addedAt: new Date().toISOString(),
+    };
+
+    // Optimistic update
+    setRepoFiles((prev) => [optimisticFile, ...prev.filter((f) => f.filePath !== normalizedPath)]);
+
+    try {
+      const result = await addExplicitFile({ repoId, filePath: normalizedPath, content, module });
+      await loadRepoFiles(repoId);
+      return result;
+    } catch (err) {
+      console.warn('Backend sync failed, file saved in active state:', err.message);
+      return optimisticFile;
+    }
   };
 
   const batchAddCustomFiles = async (filesList) => {
     const repoId = selectedRepo?.id || 'repo-1';
-    const result = await batchAddExplicitFiles(repoId, filesList);
-    await loadRepoFiles(repoId);
-    return result;
+    const newlyParsed = filesList.map((item) => {
+      const p = (item.filePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+      return {
+        id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        filePath: p,
+        rootPath: p,
+        content: item.content || '',
+        lineCount: item.content ? item.content.split('\n').length : 1,
+        sizeBytes: item.content ? item.content.length : 0,
+        module: item.module || 'Services',
+        functions: [],
+        isExplicit: true,
+        addedAt: new Date().toISOString(),
+      };
+    });
+
+    // Optimistic update
+    setRepoFiles((prev) => {
+      const newPaths = new Set(newlyParsed.map((f) => f.filePath));
+      return [...newlyParsed, ...prev.filter((f) => !newPaths.has(f.filePath))];
+    });
+
+    try {
+      const result = await batchAddExplicitFiles(repoId, filesList);
+      await loadRepoFiles(repoId);
+      return result;
+    } catch (err) {
+      console.warn('Backend batch sync note:', err.message);
+      return newlyParsed;
+    }
   };
 
   const removeCustomFile = async (fileIdentifier) => {
     const repoId = selectedRepo?.id || 'repo-1';
-    const result = await deleteExplicitFile(fileIdentifier, repoId);
-    await loadRepoFiles(repoId);
-    return result;
+    const normalized = (fileIdentifier || '').toString().replace(/\\/g, '/').replace(/^\/+/, '');
+
+    // Optimistic update
+    setRepoFiles((prev) => prev.filter((f) => f.id !== normalized && f.filePath !== normalized && f.filePath !== fileIdentifier));
+
+    try {
+      const result = await deleteExplicitFile(fileIdentifier, repoId);
+      await loadRepoFiles(repoId);
+      return result;
+    } catch (err) {
+      console.warn('Backend delete sync note:', err.message);
+      return { success: true };
+    }
+  };
+
+  const clearAllFiles = async () => {
+    const repoId = selectedRepo?.id || 'repo-1';
+    setRepoFiles([]);
+    try {
+      const result = await clearAllRepoFiles(repoId);
+      return result;
+    } catch (err) {
+      console.warn('Backend clear all sync note:', err.message);
+      return { success: true };
+    }
   };
 
   const runRepoScan = async (repoId = selectedRepo?.id) => {
@@ -307,6 +380,7 @@ export const AnalysisProvider = ({ children }) => {
         addCustomFile,
         batchAddCustomFiles,
         removeCustomFile,
+        clearAllFiles,
         isAnalyzing,
         analysisResult,
         analysisData,

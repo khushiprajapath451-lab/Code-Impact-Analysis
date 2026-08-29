@@ -6,6 +6,7 @@ import {
   addExplicitFile,
   batchAddExplicitFiles,
   removeExplicitFile,
+  clearAllRepoFiles,
 } from '../services/codeIndexer.js';
 
 let analysisHistory = [
@@ -120,16 +121,32 @@ export const handleBatchAddExplicitFiles = (req, res) => {
 };
 
 export const handleDeleteExplicitFile = (req, res) => {
-  const repoId = req.query.repoId || req.body.repoId || 'repo-1';
-  const fileIdentifier = req.params.fileId || req.query.filePath || req.body.filePath;
+  const repoId = req.query.repoId || req.body?.repoId || 'repo-1';
+  const rawIdentifier = req.params?.fileId || req.query.filePath || req.query.fileId || req.body?.filePath || req.body?.fileId;
 
-  if (!fileIdentifier) {
+  if (!rawIdentifier) {
     return res.status(400).json({ error: 'File ID or filePath is required.' });
+  }
+
+  let fileIdentifier = rawIdentifier;
+  try {
+    fileIdentifier = decodeURIComponent(rawIdentifier);
+  } catch {
+    fileIdentifier = rawIdentifier;
   }
 
   const result = removeExplicitFile(repoId, fileIdentifier);
   return res.status(200).json({
     message: 'File removed from index registry',
+    ...result,
+  });
+};
+
+export const handleClearAllRepoFiles = (req, res) => {
+  const repoId = req.query.repoId || req.body?.repoId || 'repo-1';
+  const result = clearAllRepoFiles(repoId);
+  return res.status(200).json({
+    message: 'All codebase files removed from index registry',
     ...result,
   });
 };

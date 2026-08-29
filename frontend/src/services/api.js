@@ -146,12 +146,55 @@ export const batchAddExplicitFiles = async (repoId = 'repo-1', files = []) => {
 };
 
 export const deleteExplicitFile = async (fileIdentifier, repoId = 'repo-1') => {
-  const response = await fetch(`/api/repositories/files/${encodeURIComponent(fileIdentifier)}?repoId=${encodeURIComponent(repoId)}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Failed to delete file');
-  return data;
+  try {
+    const response = await fetch(`/api/repositories/files?filePath=${encodeURIComponent(fileIdentifier)}&fileId=${encodeURIComponent(fileIdentifier)}&repoId=${encodeURIComponent(repoId)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ filePath: fileIdentifier, fileId: fileIdentifier, repoId }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to delete file');
+    return data;
+  } catch (err) {
+    // Fallback to POST /api/repositories/files/delete in case DELETE with body is intercepted
+    const postResponse = await fetch('/api/repositories/files/delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ filePath: fileIdentifier, fileId: fileIdentifier, repoId }),
+    });
+    const data = await postResponse.json();
+    if (!postResponse.ok) throw new Error(data.error || err.message || 'Failed to delete file');
+    return data;
+  }
+};
+
+export const clearAllRepoFiles = async (repoId = 'repo-1') => {
+  try {
+    const response = await fetch(`/api/repositories/files/clear-all?repoId=${encodeURIComponent(repoId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ repoId }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to clear codebase files');
+    return data;
+  } catch (err) {
+    const delResponse = await fetch(`/api/repositories/files/all?repoId=${encodeURIComponent(repoId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    const data = await delResponse.json();
+    if (!delResponse.ok) throw new Error(data.error || err.message || 'Failed to clear files');
+    return data;
+  }
 };
 

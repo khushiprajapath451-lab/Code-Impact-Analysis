@@ -43,6 +43,14 @@ let repositories = [
 
 let indexedFilesMap = new Map();
 let explicitFilesMap = new Map();
+let deletedFilesMap = new Map();
+
+const getDeletedSet = (repoId) => {
+  if (!deletedFilesMap.has(repoId)) {
+    deletedFilesMap.set(repoId, new Set());
+  }
+  return deletedFilesMap.get(repoId);
+};
 
 // Helper to extract function names and lines from raw code
 export const parseCodeMetadata = (filePath, content = '') => {
@@ -122,11 +130,20 @@ export const indexRepository = (repoId) => {
 
   const crawledFiles = crawlDirectory(targetDir);
   const explicitFiles = explicitFilesMap.get(repo.id) || [];
+  const deletedSet = getDeletedSet(repo.id);
   
   // Merge crawled and explicit (explicit files override crawled files with same path)
   const combinedMap = new Map();
-  crawledFiles.forEach(f => combinedMap.set(f.filePath, f));
-  explicitFiles.forEach(f => combinedMap.set(f.filePath, f));
+  crawledFiles.forEach((f) => {
+    if (!deletedSet.has(f.filePath) && !deletedSet.has(f.id)) {
+      combinedMap.set(f.filePath, f);
+    }
+  });
+  explicitFiles.forEach((f) => {
+    if (!deletedSet.has(f.filePath) && !deletedSet.has(f.id)) {
+      combinedMap.set(f.filePath, f);
+    }
+  });
 
   const allFiles = Array.from(combinedMap.values());
   indexedFilesMap.set(repo.id, allFiles);
@@ -156,12 +173,16 @@ export const addExplicitFile = (repoId = 'repo-1', fileData) => {
   const { filePath, content = '', module } = fileData;
   if (!filePath) throw new Error('File path relative to root is required.');
 
-  const parsed = parseCodeMetadata(filePath, content);
+  const normalizedPath = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const deletedSet = getDeletedSet(repoId);
+  deletedSet.delete(normalizedPath);
+
+  const parsed = parseCodeMetadata(normalizedPath, content);
   if (module) parsed.module = module;
 
   const currentExplicit = explicitFilesMap.get(repoId) || [];
   // Replace if exists, or append
-  const updated = [parsed, ...currentExplicit.filter(f => f.filePath !== parsed.filePath)];
+  const updated = [parsed, ...currentExplicit.filter((f) => f.filePath !== normalizedPath)];
   explicitFilesMap.set(repoId, updated);
 
   indexRepository(repoId);
@@ -170,18 +191,22 @@ export const addExplicitFile = (repoId = 'repo-1', fileData) => {
 
 export const batchAddExplicitFiles = (repoId = 'repo-1', filesList = []) => {
   const currentExplicit = explicitFilesMap.get(repoId) || [];
+  const deletedSet = getDeletedSet(repoId);
   const newlyParsed = [];
 
   for (const item of filesList) {
     if (!item.filePath) continue;
-    const parsed = parseCodeMetadata(item.filePath, item.content || '');
+    const normalizedPath = item.filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    deletedSet.delete(normalizedPath);
+
+    const parsed = parseCodeMetadata(normalizedPath, item.content || '');
     if (item.module) parsed.module = item.module;
     newlyParsed.push(parsed);
   }
 
   const existingMap = new Map();
-  currentExplicit.forEach(f => existingMap.set(f.filePath, f));
-  newlyParsed.forEach(f => existingMap.set(f.filePath, f));
+  currentExplicit.forEach((f) => existingMap.set(f.filePath, f));
+  newlyParsed.forEach((f) => existingMap.set(f.filePath, f));
 
   explicitFilesMap.set(repoId, Array.from(existingMap.values()));
   indexRepository(repoId);
@@ -189,11 +214,55 @@ export const batchAddExplicitFiles = (repoId = 'repo-1', filesList = []) => {
 };
 
 export const removeExplicitFile = (repoId = 'repo-1', fileIdentifier) => {
+  if (!fileIdentifier) return { success: false };
+  const normalizedId = fileIdentifier.toString().replace(/\\/g, '/').replace(/^\/+/, '');
+  const deletedSet = getDeletedSet(repoId);
+  deletedSet.add(normalizedId);
+
+  // Also check existing indexed files to delete both by ID and filePath
+  const currentIndexed = indexedFilesMap.get(repoId) || [];
+  const targetFile = currentIndexed.find((f) => f.id === normalizedId || f.filePath === normalizedId);
+  if (targetFile) {
+    deletedSet.add(targetFile.filePath);
+    deletedSet.add(targetFile.id);
+  }
+
   const currentExplicit = explicitFilesMap.get(repoId) || [];
-  const updated = currentExplicit.filter(f => f.id !== fileIdentifier && f.filePath !== fileIdentifier);
-  explicitFilesMap.set(repoId, updated);
+  const updatedExplicit = currentExplicit.filter(
+    (f) => f.id !== normalizedId && f.filePath !== normalizedId && (!targetFile || f.filePath !== targetFile.filePath)
+  );
+  explicitFilesMap.set(repoId, updatedExplicit);
+
   indexRepository(repoId);
-  return { success: true, remaining: updated.length };
+  const remainingFiles = indexedFilesMap.get(repoId) || [];
+  return { success: true, remaining: remainingFiles.length };
+};
+
+export const clearAllRepoFiles = (repoId = 'repo-1') => {
+  const repo = repositories.find((r) => r.id === repoId) || repositories[0];
+  const deletedSet = getDeletedSet(repoId);
+
+  // Mark all current files as deleted so crawler won't auto-revive them
+  const currentIndexed = indexedFilesMap.get(repoId) || [];
+  currentIndexed.forEach((f) => {
+    if (f.filePath) deletedSet.add(f.filePath);
+    if (f.id) deletedSet.add(f.id);
+  });
+
+  explicitFilesMap.set(repoId, []);
+  indexedFilesMap.set(repoId, []);
+
+  repo.filesCount = 0;
+  repo.functionsCount = 0;
+  repo.coverage = '0%';
+  repo.lastIndexed = new Date().toISOString();
+
+  return {
+    success: true,
+    message: 'All codebase files cleared',
+    totalFiles: 0,
+    files: [],
+  };
 };
 
 export const getAllIndexedFilesWithDetails = (repoId = 'repo-1') => {

@@ -42,6 +42,7 @@ import {
   Terminal,
   FileCode,
   FileText,
+  Upload,
 } from "lucide-react";
 
 // Requirement presets
@@ -272,6 +273,7 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
     addCustomFile,
     batchAddCustomFiles,
     removeCustomFile,
+    clearAllFiles,
     isAnalyzing,
     analysisResult,
     analysisData,
@@ -445,6 +447,69 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
     setTimeout(() => setFileActionMsg(""), 3500);
   };
 
+  const handleLocalFilesSelect = async (e) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0) return;
+
+    setIsSubmittingFile(true);
+    try {
+      const readPromises = selectedFiles.map((file) => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const rawPath = file.webkitRelativePath || file.name;
+            const p = rawPath.replace(/\\/g, "/").replace(/^\/+/, "");
+            let mod = "General";
+            const lp = p.toLowerCase();
+            if (lp.includes("controller")) mod = "Controllers";
+            else if (lp.includes("service")) mod = "Services";
+            else if (lp.includes("model")) mod = "Models";
+            else if (lp.includes("middleware")) mod = "Middlewares";
+            else if (lp.includes("test") || lp.includes("spec")) mod = "Tests";
+            else if (lp.includes("component") || lp.includes("page")) mod = "UI / Frontend";
+
+            resolve({
+              filePath: p,
+              content: reader.result || "",
+              module: mod,
+              lineCount: (reader.result || "").split("\n").length,
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+      });
+
+      const parsedFiles = await Promise.all(readPromises);
+      await batchAddCustomFiles(parsedFiles);
+      displayFileMsg(`Successfully pushed & indexed ${parsedFiles.length} file(s) into codebase.`);
+    } catch (err) {
+      alert("Error reading local files: " + err.message);
+    } finally {
+      setIsSubmittingFile(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleSingleLocalFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const p = (file.webkitRelativePath || file.name).replace(/\\/g, "/").replace(/^\/+/, "");
+      setFilePathInput(p);
+      setCodeInput(reader.result || "");
+      let mod = "Controllers";
+      const lp = p.toLowerCase();
+      if (lp.includes("service")) mod = "Services";
+      else if (lp.includes("model")) mod = "Models";
+      else if (lp.includes("middleware")) mod = "Middlewares";
+      else if (lp.includes("test")) mod = "Tests";
+      setModuleInput(mod);
+    };
+    reader.readAsText(file);
+  };
+
   const handleOpenAddFileModal = (preset = null) => {
     if (preset) {
       setFilePathInput(preset.filePath);
@@ -486,18 +551,51 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
   };
 
   const handleDeleteFile = async (file) => {
-    const idOrPath = file.id || file.filePath;
-    if (!window.confirm(`Are you sure you want to remove '${file.filePath}' from index registry?`)) {
+    const idOrPath = file.filePath || file.id;
+    if (!window.confirm(`Are you sure you want to delete '${file.filePath}' from codebase registry?`)) {
       return;
     }
     try {
       await removeCustomFile(idOrPath);
-      displayFileMsg(`Removed '${file.filePath}' from index.`);
-      if (viewingFile?.filePath === file.filePath) {
+      displayFileMsg(`Removed '${file.filePath}' from codebase index.`);
+      if (viewingFile?.filePath === file.filePath || viewingFile?.id === file.id) {
         setViewingFile(null);
       }
     } catch (err) {
       alert(err.message);
+    }
+  };
+
+  const handleClearAllFiles = async () => {
+    if (!window.confirm("Are you sure you want to delete ALL indexed files in this repository? This cannot be undone.")) {
+      return;
+    }
+    setIsSubmittingFile(true);
+    try {
+      await clearAllFiles();
+      setViewingFile(null);
+      displayFileMsg("All codebase files cleared from registry. You can now upload or add your new files.");
+    } catch (err) {
+      alert("Error clearing files: " + err.message);
+    } finally {
+      setIsSubmittingFile(false);
+    }
+  };
+
+  const handleRestorePresets = async () => {
+    setIsSubmittingFile(true);
+    try {
+      const presetsToLoad = PRESET_SNIPPETS.map((p) => ({
+        filePath: p.filePath,
+        content: p.content,
+        module: p.module,
+      }));
+      await batchAddCustomFiles(presetsToLoad);
+      displayFileMsg(`Restored ${presetsToLoad.length} sample preset files.`);
+    } catch (err) {
+      alert("Error restoring presets: " + err.message);
+    } finally {
+      setIsSubmittingFile(false);
     }
   };
 
@@ -805,16 +903,39 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
                   <h2 style={{ color: "#FFFFFF", fontSize: "20px", fontWeight: "600", margin: 0 }}>Codebase Indexer Registry</h2>
                   <p style={{ color: "#94A3B8", fontSize: "13px", margin: "4px 0 0" }}>Manage files target for requirement analysis scanning and AST dependency graph building.</p>
                 </div>
-                <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                   <button onClick={handleSyncRepo} disabled={syncing} className="secondary-btn" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px" }}>
                     <RefreshCw size={13} className={syncing ? "spin" : ""} /> Sync AST
                   </button>
-                  <button onClick={() => handleOpenAddFileModal(null)} className="primary-btn" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px", padding: "10px 16px" }}>
-                    <Plus size={14} /> Add File
+                  <label className="primary-btn" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px", padding: "10px 16px", cursor: "pointer", margin: 0 }}>
+                    <Upload size={14} /> Upload Local Files
+                    <input type="file" multiple onChange={handleLocalFilesSelect} style={{ display: "none" }} />
+                  </label>
+                  <button onClick={() => handleOpenAddFileModal(null)} className="secondary-btn" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px" }}>
+                    <Plus size={14} /> Add Snippet
                   </button>
                   <button onClick={() => setShowBatchModal(true)} className="secondary-btn" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px" }}>
-                    Batch Upload
+                    Batch Snippets
                   </button>
+                  {repoFiles.length > 0 && (
+                    <button
+                      onClick={handleClearAllFiles}
+                      disabled={isSubmittingFile}
+                      className="secondary-btn"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "12.5px",
+                        color: "#FCA5A5",
+                        borderColor: "rgba(239, 68, 68, 0.35)",
+                        background: "rgba(239, 68, 68, 0.08)",
+                      }}
+                      title="Clear all tracked files in this repository"
+                    >
+                      <Trash2 size={13} color="#EF4444" /> Delete All Files
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -865,9 +986,33 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
                   {isLoadingFiles ? (
                     <Loader text="Loading codebase file registry..." />
                   ) : filteredFiles.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "40px 0", color: "#94A3B8" }}>
-                      <FolderTree size={36} style={{ marginBottom: "10px", opacity: 0.5 }} />
-                      <p>No files found matching the filter query.</p>
+                    <div style={{ textAlign: "center", padding: "48px 20px", color: "#94A3B8" }}>
+                      <FolderTree size={44} style={{ marginBottom: "12px", opacity: 0.4, color: "#818CF8" }} />
+                      <h3 style={{ fontSize: "16px", color: "#F1F5F9", margin: "0 0 6px" }}>
+                        {repoFiles.length === 0 ? "Registry is Completely Clear" : "No files matching search"}
+                      </h3>
+                      <p style={{ fontSize: "13px", maxWidth: "440px", margin: "0 auto 20px", color: "#94A3B8" }}>
+                        {repoFiles.length === 0
+                          ? "All old files have been deleted. You can now upload your fresh project files or paste code snippets."
+                          : "Try clearing your search query or switching module filters."}
+                      </p>
+                      {repoFiles.length === 0 && (
+                        <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+                          <label className="primary-btn" style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", padding: "10px 18px", cursor: "pointer", margin: 0 }}>
+                            <Upload size={14} /> Upload Files from Computer
+                            <input type="file" multiple onChange={handleLocalFilesSelect} style={{ display: "none" }} />
+                          </label>
+                          <button onClick={() => handleOpenAddFileModal(null)} className="secondary-btn" style={{ fontSize: "13px", padding: "10px 16px", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                            <Plus size={14} /> Add Snippet
+                          </button>
+                          <button onClick={() => setShowBatchModal(true)} className="secondary-btn" style={{ fontSize: "13px", padding: "10px 16px" }}>
+                            Batch Paste
+                          </button>
+                          <button onClick={handleRestorePresets} className="secondary-btn" style={{ fontSize: "13px", padding: "10px 16px", color: "#818CF8" }}>
+                            💡 Restore Demo Presets
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1587,6 +1732,15 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
               <h3 style={{ margin: 0, fontSize: "16px", color: "white" }}>Index New Source File</h3>
               <button onClick={() => setShowAddModal(false)} style={{ background: "transparent", border: "none", color: "#94A3B8", cursor: "pointer" }}><X size={18} /></button>
             </div>
+
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px dashed rgba(255,255,255,0.15)", borderRadius: "10px", padding: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", color: "#94A3B8" }}>Load directly from your local computer:</span>
+              <label className="secondary-btn" style={{ fontSize: "12px", padding: "6px 12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px", margin: 0 }}>
+                <Upload size={13} /> Select Local File
+                <input type="file" onChange={handleSingleLocalFileSelect} style={{ display: "none" }} />
+              </label>
+            </div>
+
             <form onSubmit={handleSaveNewFile} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               <div>
                 <label style={LABEL_STYLE}>Relative File Path</label>
