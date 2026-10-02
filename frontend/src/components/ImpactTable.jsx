@@ -1,34 +1,21 @@
-import { FileCode, ShieldAlert } from "lucide-react";
-
-const DEFAULT_DATA = [
-  {
-    file: "src/controllers/orderController.js",
-    module: "Controllers",
-    risk: "High",
-    reason: "Primary entrypoint requiring TOTP validation and rate limit check",
-  },
-  {
-    file: "src/services/discountService.js",
-    module: "Services",
-    risk: "High",
-    reason: "Discount rule calculation threshold enforcement",
-  },
-  {
-    file: "src/models/Order.js",
-    module: "Database",
-    risk: "Medium",
-    reason: "Schema modification to persist requires2FA flag",
-  },
-  {
-    file: "tests/order.test.js",
-    module: "Tests",
-    risk: "Low",
-    reason: "Unit test suite updates for 2FA edge cases",
-  },
-];
+import { FileCode } from "lucide-react";
 
 const ImpactTable = ({ files }) => {
-  const tableData = files && files.length > 0 ? files : DEFAULT_DATA;
+  const tableData = Array.isArray(files) ? files : [];
+
+  if (tableData.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "36px 20px", color: "#94A3B8" }}>
+        <FileCode size={30} color="#6366F1" style={{ margin: "0 auto 10px", display: "block", opacity: 0.7 }} />
+        <h4 style={{ margin: "0 0 6px", color: "#E2E8F0", fontSize: "14.5px", fontWeight: 600 }}>
+          No Impacted Files Registered
+        </h4>
+        <p style={{ margin: 0, fontSize: "12.5px", color: "#94A3B8", maxWidth: "400px", marginInline: "auto" }}>
+          Upload or add your codebase files in the Codebase Files tab, then run an impact analysis to populate the registry.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <table
@@ -68,7 +55,7 @@ const ImpactTable = ({ files }) => {
                   <FileCode size={15} color="#818CF8" />
                   <span style={{ color: "#F3F4F6", fontWeight: 600 }}>{filePath}</span>
                 </div>
-                {item.reason && <div style={{ color: "#9CA3AF", fontSize: "12px", marginTop: "4px" }}>{item.reason}</div>}
+                {item.reason && <div style={{ color: "#94A3B8", fontSize: "12px", marginTop: "4px" }}>{item.reason}</div>}
               </td>
 
               <td style={{ padding: "14px", color: "#D1D5DB", fontSize: "13px" }}>

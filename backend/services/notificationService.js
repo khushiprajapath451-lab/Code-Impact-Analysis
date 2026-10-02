@@ -29,13 +29,26 @@ export const initSocketIO = (io) => {
  * Supports any SMTP provider (Gmail, SendGrid, Mailgun, etc.)
  */
 const createTransporter = () => {
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '').trim();
+
+  if (host.includes('gmail')) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass,
+      },
+    });
+  }
+
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host,
     port: Number(process.env.SMTP_PORT) || 587,
-    secure: false, // TLS
+    secure: Number(process.env.SMTP_PORT) === 465,
     auth: {
       user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      pass,
     },
   });
 };
@@ -60,9 +73,9 @@ export const sendEmailNotification = async (to, subject, htmlBody) => {
       subject,
       html: htmlBody,
     });
-    console.log(`[NotificationService] ✅ Email sent to ${to} — MessageId: ${info.messageId}`);
+    console.log(`[NotificationService]  Email sent to ${to} — MessageId: ${info.messageId}`);
   } catch (err) {
-    console.error(`[NotificationService] ❌ Email failed to ${to}:`, err.message);
+    console.error(`[NotificationService]  Email failed to ${to}:`, err.message);
   }
 };
 
@@ -73,7 +86,7 @@ export const emailImpactComplete = (userName, requirementId, impactedCount, summ
   subject: `[ImpactIQ] Impact Analysis Ready — ${requirementId}`,
   html: `
     <div style="font-family:Inter,sans-serif;max-width:600px;margin:auto;background:#0f172a;color:#e2e8f0;padding:32px;border-radius:12px;">
-      <h2 style="color:#818cf8;">🎯 Impact Analysis Complete</h2>
+      <h2 style="color:#818cf8;"> Impact Analysis Complete</h2>
       <p>Hi <strong>${userName}</strong>,</p>
       <p>Your impact analysis for <strong>${requirementId}</strong> is ready.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0;">
@@ -96,7 +109,7 @@ export const emailPreReviewComplete = (userName, requirementId, qualityScore, re
   subject: `[ImpactIQ] Pre-Review Ready — ${requirementId}`,
   html: `
     <div style="font-family:Inter,sans-serif;max-width:600px;margin:auto;background:#0f172a;color:#e2e8f0;padding:32px;border-radius:12px;">
-      <h2 style="color:#818cf8;">🔍 Pre-Review Analysis Complete</h2>
+      <h2 style="color:#818cf8;"> Pre-Review Analysis Complete</h2>
       <p>Hi <strong>${userName}</strong>,</p>
       <p>The AI pre-review for <strong>${requirementId}</strong> has finished.</p>
       <table style="width:100%;border-collapse:collapse;margin:16px 0;">
@@ -112,6 +125,195 @@ export const emailPreReviewComplete = (userName, requirementId, qualityScore, re
       <p style="color:#64748b;font-size:12px;margin-top:24px;">ImpactIQ • Code Intelligence Platform</p>
     </div>`,
 });
+
+/** Repository owner Push alert email */
+export const emailPushAlertToOwner = (ownerName, data) => {
+  const {
+    repoName = 'Repository',
+    repoFullName = repoName,
+    repoUrl = `https://github.com/${repoFullName}`,
+    branch = 'main',
+    pusher = {},
+    commits = [],
+    totalCommits = 1,
+    files = { added: [], modified: [], removed: [], totalChanged: 0 },
+    compareUrl,
+    impactSummary,
+    timestamp = new Date().toUTCString(),
+  } = data;
+
+  const commitsHtml = commits
+    .map(
+      (c) => `
+      <div style="background:#1e293b;padding:12px;border-radius:6px;margin-bottom:8px;border-left:3px solid #6366f1;">
+        <div style="font-weight:600;color:#f8fafc;font-size:13px;">${c.message || 'No commit message'}</div>
+        <div style="color:#94a3b8;font-size:12px;margin-top:4px;">
+          <code>${(c.id || '').substring(0, 7)}</code> by <strong>@${c.author?.username || c.author?.name || pusher.username || 'user'}</strong>
+          ${c.url ? ` · <a href="${c.url}" style="color:#818cf8;text-decoration:none;">View Commit ↗</a>` : ''}
+        </div>
+      </div>`
+    )
+    .join('');
+
+  const filesHtml = `
+    <div style="display:flex;gap:8px;margin:12px 0;font-size:12px;">
+      <span style="background:#064e3b;color:#34d399;padding:4px 8px;border-radius:4px;font-weight:bold;">+${files.added?.length || 0} Added</span>
+      <span style="background:#451a03;color:#fbbf24;padding:4px 8px;border-radius:4px;font-weight:bold;">~${files.modified?.length || 0} Modified</span>
+      <span style="background:#4c0519;color:#f87171;padding:4px 8px;border-radius:4px;font-weight:bold;">-${files.removed?.length || 0} Removed</span>
+    </div>`;
+
+  return {
+    subject: `🚀 [ImpactIQ Alert] New Push to ${repoFullName} (${branch}) by @${pusher.username || 'collaborator'}`,
+    html: `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:640px;margin:auto;background:#090d16;color:#e2e8f0;padding:32px;border-radius:12px;border:1px solid #1e293b;">
+        <div style="display:flex;align-items:center;margin-bottom:20px;">
+          <h2 style="margin:0;color:#818cf8;font-size:20px;">🚀 Repository Push Activity</h2>
+        </div>
+        <p style="margin:0 0 16px 0;font-size:14px;color:#cbd5e1;">
+          Hi <strong>${ownerName || 'Owner'}</strong>, new commits were just pushed to your repository <a href="${repoUrl}" style="color:#38bdf8;text-decoration:none;font-weight:bold;">${repoFullName}</a>.
+        </p>
+
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;background:#0f172a;border-radius:8px;overflow:hidden;border:1px solid #1e293b;">
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;border-bottom:1px solid #1e293b;width:30%;">Repository</td>
+            <td style="padding:10px 14px;color:#f8fafc;font-weight:600;border-bottom:1px solid #1e293b;"><a href="${repoUrl}" style="color:#38bdf8;text-decoration:none;">${repoFullName}</a></td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;border-bottom:1px solid #1e293b;">Branch</td>
+            <td style="padding:10px 14px;color:#a855f7;font-weight:600;border-bottom:1px solid #1e293b;"><code>${branch}</code></td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;border-bottom:1px solid #1e293b;">Pusher</td>
+            <td style="padding:10px 14px;color:#f8fafc;border-bottom:1px solid #1e293b;"><strong>@${pusher.username || pusher.name || 'collaborator'}</strong> ${pusher.email ? `<span style="color:#64748b;">(${pusher.email})</span>` : ''}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;">Total Commits</td>
+            <td style="padding:10px 14px;color:#22c55e;font-weight:600;">${totalCommits}</td>
+          </tr>
+        </table>
+
+        ${filesHtml}
+
+        <h3 style="color:#94a3b8;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px 0;">Recent Commits</h3>
+        ${commitsHtml}
+
+        ${
+          impactSummary
+            ? `
+        <h3 style="color:#94a3b8;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px 0;">🤖 AI Impact Analysis</h3>
+        <div style="background:#0f172a;border:1px solid #312e81;border-radius:8px;padding:16px;color:#cbd5e1;font-size:13px;line-height:1.5;">
+          ${impactSummary.replace(/\n/g, '<br/>')}
+        </div>`
+            : ''
+        }
+
+        ${
+          compareUrl
+            ? `
+        <div style="margin-top:24px;text-align:center;">
+          <a href="${compareUrl}" style="background:#4f46e5;color:#ffffff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;display:inline-block;">View Diff on GitHub →</a>
+        </div>`
+            : ''
+        }
+
+        <hr style="border:none;border-top:1px solid #1e293b;margin:28px 0 16px 0;"/>
+        <p style="color:#64748b;font-size:11px;margin:0;">
+          ImpactIQ Webhook System • Automatic Real-Time Alert • ${timestamp}
+        </p>
+      </div>`,
+  };
+};
+
+/** Repository owner Pull Request alert email */
+export const emailPullRequestAlertToOwner = (ownerName, data) => {
+  const {
+    repoName = 'Repository',
+    repoFullName = repoName,
+    prNumber = 1,
+    prTitle = 'Pull Request',
+    prUrl = '',
+    action = 'opened',
+    merged = false,
+    author = {},
+    baseBranch = 'main',
+    headBranch = 'feature',
+    stats = { commits: 1, changedFiles: 1, additions: 0, deletions: 0 },
+    preReviewResult = null,
+    timestamp = new Date().toUTCString(),
+  } = data;
+
+  const actionBadge = merged
+    ? '<span style="background:#581c87;color:#c084fc;padding:4px 8px;border-radius:4px;font-weight:bold;">Merged 🟣</span>'
+    : action === 'opened'
+    ? '<span style="background:#064e3b;color:#34d399;padding:4px 8px;border-radius:4px;font-weight:bold;">Opened 🟢</span>'
+    : action === 'closed'
+    ? '<span style="background:#4c0519;color:#f87171;padding:4px 8px;border-radius:4px;font-weight:bold;">Closed 🔴</span>'
+    : `<span style="background:#1e1b4b;color:#818cf8;padding:4px 8px;border-radius:4px;font-weight:bold;">${action} 🔵</span>`;
+
+  return {
+    subject: `🔔 [ImpactIQ Alert] PR #${prNumber} ${action.toUpperCase()}: "${prTitle}" on ${repoFullName}`,
+    html: `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:640px;margin:auto;background:#090d16;color:#e2e8f0;padding:32px;border-radius:12px;border:1px solid #1e293b;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h2 style="margin:0;color:#818cf8;font-size:20px;">🔔 Pull Request Activity</h2>
+          <div>${actionBadge}</div>
+        </div>
+        <p style="margin:0 0 16px 0;font-size:14px;color:#cbd5e1;">
+          Hi <strong>${ownerName || 'Owner'}</strong>, Pull Request <a href="${prUrl}" style="color:#38bdf8;text-decoration:none;font-weight:bold;">#${prNumber}</a> in <a href="https://github.com/${repoFullName}" style="color:#38bdf8;text-decoration:none;">${repoFullName}</a> was <strong>${action}</strong> by <strong>@${author.username || author.name || 'contributor'}</strong>.
+        </p>
+
+        <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:16px;margin:16px 0;">
+          <h3 style="margin:0 0 8px 0;color:#f8fafc;font-size:16px;">${prTitle}</h3>
+          <div style="color:#94a3b8;font-size:12px;">
+            <code>${headBranch}</code> ➔ <code>${baseBranch}</code>
+          </div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;background:#0f172a;border-radius:8px;overflow:hidden;border:1px solid #1e293b;">
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;border-bottom:1px solid #1e293b;width:30%;">Changed Files</td>
+            <td style="padding:10px 14px;color:#f8fafc;font-weight:600;border-bottom:1px solid #1e293b;">${stats.changedFiles || 0}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;border-bottom:1px solid #1e293b;">Lines Added</td>
+            <td style="padding:10px 14px;color:#22c55e;font-weight:600;border-bottom:1px solid #1e293b;">+${stats.additions || 0}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;border-bottom:1px solid #1e293b;">Lines Deleted</td>
+            <td style="padding:10px 14px;color:#ef4444;font-weight:600;border-bottom:1px solid #1e293b;">-${stats.deletions || 0}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;color:#94a3b8;">Author</td>
+            <td style="padding:10px 14px;color:#f8fafc;"><strong>@${author.username || author.name || 'contributor'}</strong></td>
+          </tr>
+        </table>
+
+        ${
+          preReviewResult
+            ? `
+        <h3 style="color:#94a3b8;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin:20px 0 10px 0;">🤖 AI Automated Pre-Review</h3>
+        <div style="background:#0f172a;border:1px solid #312e81;border-radius:8px;padding:16px;color:#cbd5e1;font-size:13px;line-height:1.5;">
+          <div style="display:flex;gap:12px;margin-bottom:12px;">
+            <span style="background:#064e3b;color:#34d399;padding:4px 8px;border-radius:4px;font-weight:bold;">Quality: ${preReviewResult.qualityScore || '95/100'}</span>
+            <span style="background:#451a03;color:#fbbf24;padding:4px 8px;border-radius:4px;font-weight:bold;">Risk: ${preReviewResult.regressionRisk || 'Low'}</span>
+          </div>
+          <p style="margin:0;white-space:pre-wrap;">${(preReviewResult.reviewMarkdown || preReviewResult.reviewResult || '').slice(0, 500)}</p>
+        </div>`
+            : ''
+        }
+
+        <div style="margin-top:24px;text-align:center;">
+          <a href="${prUrl}" style="background:#4f46e5;color:#ffffff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;display:inline-block;">View Pull Request #${prNumber} on GitHub →</a>
+        </div>
+
+        <hr style="border:none;border-top:1px solid #1e293b;margin:28px 0 16px 0;"/>
+        <p style="color:#64748b;font-size:11px;margin:0;">
+          ImpactIQ Webhook System • Automatic Real-Time Alert • ${timestamp}
+        </p>
+      </div>`,
+  };
+};
+
 
 // ─── 2. SLACK ─────────────────────────────────────────────────────────────────
 
@@ -138,9 +340,9 @@ export const sendSlackNotification = async (text, blocks = null) => {
     });
 
     if (!response.ok) throw new Error(`Slack responded with ${response.status}`);
-    console.log('[NotificationService] ✅ Slack notification sent');
+    console.log('[NotificationService]  Slack notification sent');
   } catch (err) {
-    console.error('[NotificationService] ❌ Slack notification failed:', err.message);
+    console.error('[NotificationService]  Slack notification failed:', err.message);
   }
 };
 
@@ -148,7 +350,7 @@ export const sendSlackNotification = async (text, blocks = null) => {
 export const slackImpactBlocks = (requirementId, impactedCount, confidence, repoName) => [
   {
     type: 'header',
-    text: { type: 'plain_text', text: '🎯 Impact Analysis Complete', emoji: true },
+    text: { type: 'plain_text', text: ' Impact Analysis Complete', emoji: true },
   },
   {
     type: 'section',
@@ -166,7 +368,7 @@ export const slackImpactBlocks = (requirementId, impactedCount, confidence, repo
 export const slackPreReviewBlocks = (requirementId, qualityScore, regressionRisk, prTitle) => [
   {
     type: 'header',
-    text: { type: 'plain_text', text: '🔍 Pre-Review Analysis Complete', emoji: true },
+    text: { type: 'plain_text', text: ' Pre-Review Analysis Complete', emoji: true },
   },
   {
     type: 'section',
@@ -215,10 +417,10 @@ export const postGitHubPRComment = async (owner, repo, prNumber, body) => {
     }
 
     const comment = await response.json();
-    console.log(`[NotificationService] ✅ GitHub PR comment posted — ${comment.html_url}`);
+    console.log(`[NotificationService]  GitHub PR comment posted — ${comment.html_url}`);
     return comment;
   } catch (err) {
-    console.error('[NotificationService] ❌ GitHub PR comment failed:', err.message);
+    console.error('[NotificationService]  GitHub PR comment failed:', err.message);
   }
 };
 
@@ -231,7 +433,7 @@ export const formatPRComment = (requirementId, qualityScore, regressionRisk, rev
 | **Requirement** | \`${requirementId}\` |
 | **Quality Score** | ${qualityScore} |
 | **Regression Risk** | ${regressionRisk} |
-| **Security** | ✅ Pass |
+| **Security** |  Pass |
 
 ---
 
@@ -254,7 +456,7 @@ export const emitToAll = (event, payload) => {
     return;
   }
   _io.emit(event, payload);
-  console.log(`[NotificationService] ✅ Socket.io event emitted → "${event}"`);
+  console.log(`[NotificationService]  Socket.io event emitted → "${event}"`);
 };
 
 /**
@@ -270,5 +472,5 @@ export const emitToUser = (userId, event, payload) => {
     return;
   }
   _io.to(userId).emit(event, payload);
-  console.log(`[NotificationService] ✅ Socket.io event emitted to user ${userId} → "${event}"`);
+  console.log(`[NotificationService]  Socket.io event emitted to user ${userId} → "${event}"`);
 };

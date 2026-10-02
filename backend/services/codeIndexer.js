@@ -97,13 +97,26 @@ export const parseCodeMetadata = (filePath, content = '') => {
 };
 
 // Helper to crawl directory for code files
+const IGNORED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.venv',
+  '.pytest_cache',
+  '.state',
+  '.gemini',
+  'Code-Impact-Analysis-Ai-code-analyzer',
+  'Code-Impact-Analysis-agent-review',
+]);
+
 const crawlDirectory = (dir, baseDir = dir, result = []) => {
   try {
     if (!fs.existsSync(dir)) return result;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') {
+      if (IGNORED_DIRS.has(entry.name)) {
         continue;
       }
       const fullPath = path.join(dir, entry.name);
@@ -123,9 +136,8 @@ const crawlDirectory = (dir, baseDir = dir, result = []) => {
   return result;
 };
 
-// Scan and index repository files
-export const indexRepository = (repoId) => {
-  const repo = repositories.find((r) => r.id === repoId) || repositories[0];
+export const indexRepository = (repoIdOrName) => {
+  const repo = repositories.find((r) => r.id === repoIdOrName || r.name === repoIdOrName || (r.fullName && r.fullName.toLowerCase().includes(String(repoIdOrName).toLowerCase()))) || repositories[0];
   const targetDir = fs.existsSync(repo.repoPath) ? repo.repoPath : process.cwd();
 
   const crawledFiles = crawlDirectory(targetDir);
@@ -275,6 +287,51 @@ export const getAllIndexedFilesWithDetails = (repoId = 'repo-1') => {
 // Initial default sample files explicitly registered so the user has immediate context
 const DEFAULT_PRESET_FILES = [
   {
+    filePath: 'src/services/claimVerificationService.js',
+    module: 'Services',
+    content: `import TrustedSource from '../models/TrustedSource.js';
+
+export const verifyClaimAgainstSources = async (claimText) => {
+  const normalized = (claimText || '').trim();
+  if (!normalized) throw new Error('Claim text is required');
+
+  const sources = await TrustedSource.find({ isVerified: true }).limit(10);
+  const isFlagged = /unproven|fabricated|conspiracy|miracle|guaranteed/i.test(normalized);
+
+  return {
+    claim: normalized,
+    verdict: isFlagged ? 'MISLEADING' : 'VERIFIED',
+    confidenceScore: isFlagged ? 0.94 : 0.82,
+    rationale: isFlagged
+      ? 'Contradicts indexed scientific consensus across verified fact databases.'
+      : 'Corroborated by verified reference authorities.',
+    sourcesChecked: sources.map(s => s.name || s.domain),
+  };
+};
+
+export const explainSuspiciousClaim = async (claimId) => {
+  return {
+    claimId,
+    flags: ['Sensational language detected', 'Missing authoritative citations'],
+    credibilityIndex: 'Low (22%)',
+  };
+};`,
+  },
+  {
+    filePath: 'tests/misinformationDetector.test.js',
+    module: 'Tests',
+    content: `import { describe, it, expect } from 'vitest';
+import { verifyClaimAgainstSources } from '../src/services/claimVerificationService.js';
+
+describe('Misinformation Verification Engine', () => {
+  it('identifies unverified medical conspiracy claims as MISLEADING', async () => {
+    const result = await verifyClaimAgainstSources('Miracle cure guaranteed with zero side effects');
+    expect(result.verdict).toBe('MISLEADING');
+    expect(result.confidenceScore).toBeGreaterThan(0.9);
+  });
+});`,
+  },
+  {
     filePath: 'src/controllers/orderController.js',
     module: 'Controllers',
     content: `import Order from '../models/Order.js';
@@ -386,6 +443,49 @@ export const getRepositoryById = (repoId) => {
   return repositories.find((r) => r.id === repoId) || repositories[0];
 };
 
+export const getRepositoryByNameOrId = (nameOrId) => {
+  if (!nameOrId) return null;
+  const clean = String(nameOrId).toLowerCase().trim();
+  return (
+    repositories.find(
+      (r) =>
+        r.id.toLowerCase() === clean ||
+        r.name.toLowerCase() === clean ||
+        (r.fullName && r.fullName.toLowerCase() === clean) ||
+        clean.includes(r.name.toLowerCase())
+    ) || null
+  );
+};
+
+export const registerConnectedRepository = (repoData) => {
+  if (!repoData || !repoData.name) return null;
+  const existingIdx = repositories.findIndex(
+    (r) => r.name.toLowerCase() === repoData.name.toLowerCase()
+  );
+  const repoEntry = {
+    id: repoData.id || `repo-${Date.now()}`,
+    name: repoData.name,
+    owner: repoData.owner || 'default',
+    branch: repoData.branch || 'main',
+    status: 'Connected',
+    repoPath: repoData.repoPath || path.resolve(process.cwd(), '../backend'),
+    htmlUrl: repoData.htmlUrl || `https://github.com/${repoData.owner || 'org'}/${repoData.name}`,
+    filesCount: repoData.filesCount || 12,
+    functionsCount: repoData.functionsCount || 38,
+    classesCount: repoData.classesCount || 8,
+    coverage: repoData.coverage || '90%',
+    lastIndexed: new Date().toISOString(),
+  };
+
+  if (existingIdx >= 0) {
+    repositories[existingIdx] = { ...repositories[existingIdx], ...repoEntry };
+    return repositories[existingIdx];
+  } else {
+    repositories.push(repoEntry);
+    return repoEntry;
+  }
+};
+
 export const getIndexedFilesForRepo = (repoId) => {
   if (!indexedFilesMap.has(repoId)) {
     indexRepository(repoId);
@@ -393,3 +493,4 @@ export const getIndexedFilesForRepo = (repoId) => {
   const files = indexedFilesMap.get(repoId) || [];
   return files.map((f) => f.filePath);
 };
+

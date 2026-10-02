@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import mammoth from "mammoth";
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 import MetricCard from "../components/MetricCard";
@@ -43,10 +44,15 @@ import {
   FileCode,
   FileText,
   Upload,
+  FileUp,
+  FileCheck,
+  Paperclip,
+  File,
 } from "lucide-react";
 
 // Requirement presets
 const REQUIREMENT_PRESETS = [
+
   {
     id: "JIRA-241",
     title: "Multi-Factor Authentication on High-Value Orders",
@@ -74,110 +80,6 @@ const REQUIREMENT_PRESETS = [
   },
 ];
 
-// Preset file templates for codebase files
-const PRESET_SNIPPETS = [
-  {
-    title: "Auth Middleware & Token Guard",
-    filePath: "src/middlewares/authGuard.js",
-    module: "Middlewares",
-    content: `import jwt from 'jsonwebtoken';
-
-export const requireAuth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or malformed Authorization token' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    req.user = payload;
-    next();
-  } catch (err) {
-    return res.status(403).json({ error: 'Token is invalid or expired' });
-  }
-};`,
-  },
-  {
-    title: "Stripe Webhook Handler",
-    filePath: "src/controllers/webhookController.js",
-    module: "Controllers",
-    content: `import stripe from '../config/stripe.js';
-import Order from '../models/Order.js';
-
-export const handleStripeWebhook = async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(req.rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    return res.status(400).send(\`Webhook Error: \${err.message}\`);
-  }
-
-  if (event.type === 'payment_intent.succeeded') {
-    const paymentIntent = event.data.object;
-    await Order.findOneAndUpdate({ paymentIntentId: paymentIntent.id }, { status: 'PAID' });
-  }
-
-  res.json({ received: true });
-};`,
-  },
-  {
-    title: "Inventory & Stock Service",
-    filePath: "src/services/inventoryService.js",
-    module: "Services",
-    content: `import Inventory from '../models/Inventory.js';
-
-export const reserveStock = async (items) => {
-  for (const item of items) {
-    const stock = await Inventory.findOne({ productId: item.productId });
-    if (!stock || stock.available < item.quantity) {
-      throw new Error(\`Insufficient stock for product \${item.productId}\`);
-    }
-    stock.available -= item.quantity;
-    stock.reserved += item.quantity;
-    await stock.save();
-  }
-  return true;
-};
-
-export const releaseStock = async (items) => {
-  for (const item of items) {
-    await Inventory.updateOne(
-      { productId: item.productId },
-      { $inc: { available: item.quantity, reserved: -item.quantity } }
-    );
-  }
-};`,
-  },
-  {
-    title: "Checkout Integration Test",
-    filePath: "tests/checkoutIntegration.test.js",
-    module: "Tests",
-    content: `import { describe, it, expect, vi } from 'vitest';
-import { processCheckout } from '../src/controllers/orderController.js';
-
-describe('Checkout TOTP & Discount Enforcement', () => {
-  it('rejects transaction > $500 if TOTP code is omitted', async () => {
-    const req = {
-      body: {
-        cart: { total: 750, items: [{ productId: 'p1', quantity: 2 }] },
-        user: { id: 'u123', isAdmin: false },
-        discountCode: 'SUMMER20',
-      },
-    };
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    };
-
-    await processCheckout(req, res);
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
-});`,
-  },
-];
 
 // Agents List
 const AGENTS_LIST = [
@@ -185,7 +87,7 @@ const AGENTS_LIST = [
     id: "coord-agent",
     name: "Coordinator Agent",
     role: "Orchestration & Workflow Management",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     status: "Active",
     tasksCompleted: 142,
     accuracy: "99.2%",
@@ -194,7 +96,7 @@ const AGENTS_LIST = [
     id: "req-agent",
     name: "Requirement Analysis Agent",
     role: "BRD / Jira parsing and semantic classification",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     status: "Active",
     tasksCompleted: 98,
     accuracy: "97.8%",
@@ -203,7 +105,7 @@ const AGENTS_LIST = [
     id: "impact-agent",
     name: "Code Impact Agent",
     role: "AST parsing, dependency mapping, change tracing",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     status: "Active",
     tasksCompleted: 85,
     accuracy: "96.4%",
@@ -212,7 +114,7 @@ const AGENTS_LIST = [
     id: "review-agent",
     name: "Senior Pre-Review Agent",
     role: "Automated code inspection, linting, regression risk",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     status: "Active",
     tasksCompleted: 110,
     accuracy: "98.1%",
@@ -221,7 +123,7 @@ const AGENTS_LIST = [
     id: "pr-agent",
     name: "PR Generator Agent",
     role: "Automated PR drafting and release documentation",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     status: "Active",
     tasksCompleted: 76,
     accuracy: "99.0%",
@@ -315,13 +217,67 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
   const [batchRawText, setBatchRawText] = useState("");
   const [batchFilesPreview, setBatchFilesPreview] = useState([]);
 
+  // Requirement document upload states
+  const [isExtractingDoc, setIsExtractingDoc] = useState(false);
+  const [uploadedDocInfo, setUploadedDocInfo] = useState(null);
+  const [dragOverDoc, setDragOverDoc] = useState(false);
+  const docInputRef = useRef(null);
+
   // Settings states
-  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
+  const [geminiModel, setGeminiModel] = useState("gemini-3.6-flash");
   const [githubUsername, setGithubUsername] = useState("");
   const [jiraUsername, setJiraUsername] = useState("");
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState("");
+
+  // Handle document file upload (.docx, .doc, .txt, .md, .pdf)
+  const handleDocFileSelect = async (file) => {
+    if (!file) return;
+    setIsExtractingDoc(true);
+    try {
+      const fileName = file.name;
+      const ext = fileName.split(".").pop().toLowerCase();
+      let extractedText = "";
+
+      if (ext === "docx") {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        extractedText = result.value || "";
+      } else if (ext === "txt" || ext === "md" || ext === "json") {
+        extractedText = await file.text();
+      } else if (ext === "doc") {
+        const raw = await file.text();
+        extractedText = raw.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, " ").replace(/\s{2,}/g, " ").trim();
+      } else {
+        extractedText = await file.text();
+      }
+
+      if (!extractedText.trim()) {
+        throw new Error("Could not extract text from document. Please ensure the file contains readable requirement text.");
+      }
+
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_\-\s]/g, "");
+      setBrdText(extractedText);
+      setRequirementId(cleanTitle.substring(0, 24).toUpperCase());
+      setUploadedDocInfo({
+        name: file.name,
+        size: (file.size / 1024).toFixed(1) + " KB",
+        chars: extractedText.length,
+        lines: extractedText.split("\n").length,
+      });
+    } catch (err) {
+      alert("Document Parsing Error: " + err.message);
+    } finally {
+      setIsExtractingDoc(false);
+    }
+  };
+
+  const handleClearDoc = () => {
+    setUploadedDocInfo(null);
+    setBrdText("");
+    if (docInputRef.current) docInputRef.current.value = "";
+  };
 
   // Populate settings form from backend profile
   useEffect(() => {
@@ -582,22 +538,6 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
     }
   };
 
-  const handleRestorePresets = async () => {
-    setIsSubmittingFile(true);
-    try {
-      const presetsToLoad = PRESET_SNIPPETS.map((p) => ({
-        filePath: p.filePath,
-        content: p.content,
-        module: p.module,
-      }));
-      await batchAddCustomFiles(presetsToLoad);
-      displayFileMsg(`Restored ${presetsToLoad.length} sample preset files.`);
-    } catch (err) {
-      alert("Error restoring presets: " + err.message);
-    } finally {
-      setIsSubmittingFile(false);
-    }
-  };
 
   const handleParseBatchText = () => {
     if (!batchRawText.trim()) return;
@@ -678,7 +618,7 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
     <>
       <Navbar />
 
-      <div className="dashboard-shell" style={{ display: "flex", background: "#07111f" }}>
+      <div className="dashboard-shell" style={{ display: "flex", background: "transparent" }}>
         <Sidebar />
 
         <div className="dashboard-main" style={{ flex: 1, padding: "28px", minWidth: 0 }}>
@@ -1008,9 +948,6 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
                           <button onClick={() => setShowBatchModal(true)} className="secondary-btn" style={{ fontSize: "13px", padding: "10px 16px" }}>
                             Batch Paste
                           </button>
-                          <button onClick={handleRestorePresets} className="secondary-btn" style={{ fontSize: "13px", padding: "10px 16px", color: "#818CF8" }}>
-                            💡 Restore Demo Presets
-                          </button>
                         </div>
                       )}
                     </div>
@@ -1091,34 +1028,6 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
                   </div>
                 )}
               </div>
-
-              {/* Preset Quick Files when directory is empty or to guide user */}
-              {!viewingFile && (
-                <div className="card" style={{ padding: "20px" }}>
-                  <h3 style={{ fontSize: "15px", margin: "0 0 12px", color: "#E2E8F0" }}>💡 Quick Preset Templates to Register</h3>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px" }}>
-                    {PRESET_SNIPPETS.map((preset, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => handleOpenAddFileModal(preset)}
-                        style={{
-                          padding: "12px",
-                          background: "rgba(255,255,255,0.03)",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          borderRadius: "10px",
-                          cursor: "pointer",
-                          transition: "0.2s",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#818CF8")}
-                        onMouseLeave={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
-                      >
-                        <h4 style={{ fontSize: "13.5px", color: "#F1F5F9", margin: "0 0 4px" }}>{preset.title}</h4>
-                        <code style={{ fontSize: "11px", color: "#818CF8", display: "block" }}>{preset.filePath}</code>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -1180,31 +1089,188 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
 
                 {/* Form specifications */}
                 <div className="card" style={{ padding: "24px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                    <h2 style={{ fontSize: "18px", margin: 0, fontWeight: 600 }}>Requirement Specifications</h2>
-                    <input
-                      type="text"
-                      value={requirementId}
-                      onChange={(e) => setRequirementId(e.target.value)}
-                      placeholder="e.g. JIRA-241"
-                      style={{
-                        padding: "6px 12px",
-                        background: "#1F2937",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        color: "white",
-                        borderRadius: "8px",
-                        fontWeight: "bold",
-                        width: "120px",
-                        fontSize: "13px",
-                      }}
-                    />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+                    <div>
+                      <h2 style={{ fontSize: "18px", margin: 0, fontWeight: 600 }}>Requirement Specifications</h2>
+                      <p style={{ color: "#94A3B8", fontSize: "13px", margin: "4px 0 0" }}>
+                        Paste requirement text or upload a <strong>.docx / .doc Word document</strong> or BRD file.
+                      </p>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <label style={{ fontSize: "12.5px", color: "#94A3B8", fontWeight: "600" }}>Story ID:</label>
+                      <input
+                        type="text"
+                        value={requirementId}
+                        onChange={(e) => setRequirementId(e.target.value)}
+                        placeholder="e.g. JIRA-241"
+                        style={{
+                          padding: "6px 12px",
+                          background: "#1F2937",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "white",
+                          borderRadius: "8px",
+                          fontWeight: "bold",
+                          width: "130px",
+                          fontSize: "13px",
+                        }}
+                      />
+                    </div>
                   </div>
+
+                  {/* Word / Document Drag-and-Drop & Upload Zone */}
+                  <input
+                    type="file"
+                    ref={docInputRef}
+                    accept=".docx,.doc,.txt,.md,.json,.pdf"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleDocFileSelect(file);
+                    }}
+                  />
+
+                  {uploadedDocInfo ? (
+                    <div
+                      style={{
+                        padding: "14px 18px",
+                        borderRadius: "14px",
+                        background: "rgba(99, 102, 241, 0.12)",
+                        border: "1px solid rgba(129, 140, 248, 0.35)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div
+                          style={{
+                            width: "38px",
+                            height: "38px",
+                            borderRadius: "10px",
+                            background: "rgba(99, 102, 241, 0.25)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#818CF8",
+                          }}
+                        >
+                          <FileCheck size={20} />
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span style={{ color: "#FFF", fontWeight: "700", fontSize: "13.5px" }}>{uploadedDocInfo.name}</span>
+                            <span style={{ fontSize: "11px", background: "rgba(34, 197, 94, 0.2)", color: "#86EFAC", padding: "2px 8px", borderRadius: "999px", fontWeight: "600" }}>
+                              Extracted Successfully
+                            </span>
+                          </div>
+                          <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#94A3B8" }}>
+                            Size: <strong>{uploadedDocInfo.size}</strong> • Text: <strong>{uploadedDocInfo.chars.toLocaleString()} chars</strong> (~{uploadedDocInfo.lines} lines)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          type="button"
+                          onClick={() => docInputRef.current?.click()}
+                          className="secondary-btn"
+                          style={{ padding: "6px 12px", fontSize: "12px", borderRadius: "8px" }}
+                        >
+                          Replace File
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleClearDoc}
+                          style={{
+                            background: "rgba(239, 68, 68, 0.15)",
+                            border: "1px solid rgba(239, 68, 68, 0.3)",
+                            color: "#FCA5A5",
+                            borderRadius: "8px",
+                            padding: "6px 10px",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOverDoc(true);
+                      }}
+                      onDragLeave={() => setDragOverDoc(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOverDoc(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) handleDocFileSelect(file);
+                      }}
+                      onClick={() => docInputRef.current?.click()}
+                      style={{
+                        padding: "20px",
+                        borderRadius: "14px",
+                        background: dragOverDoc ? "rgba(99, 102, 241, 0.18)" : "rgba(255, 255, 255, 0.03)",
+                        border: dragOverDoc ? "2px dashed #818CF8" : "1px dashed rgba(255, 255, 255, 0.15)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        cursor: "pointer",
+                        marginBottom: "16px",
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                        <div
+                          style={{
+                            width: "42px",
+                            height: "42px",
+                            borderRadius: "12px",
+                            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.2))",
+                            border: "1px solid rgba(129, 140, 248, 0.3)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#818CF8",
+                          }}
+                        >
+                          <FileUp size={22} />
+                        </div>
+                        <div>
+                          <h4 style={{ color: "#FFF", fontSize: "14px", margin: "0 0 2px 0", fontWeight: "600" }}>
+                            {isExtractingDoc ? "Extracting text from Word document..." : "Upload Word Document (BRD / Requirement Spec)"}
+                          </h4>
+                          <p style={{ color: "#94A3B8", fontSize: "12px", margin: 0 }}>
+                            Click to browse or drag & drop <strong>.docx</strong>, <strong>.doc</strong>, <strong>.txt</strong>, <strong>.md</strong> file here
+                          </p>
+                        </div>
+                      </div>
+
+                      <div
+                        className="secondary-btn"
+                        style={{
+                          padding: "8px 16px",
+                          fontSize: "12.5px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <Upload size={14} /> Browse File
+                      </div>
+                    </div>
+                  )}
 
                   <textarea
                     rows={8}
                     value={brdText}
                     onChange={(e) => setBrdText(e.target.value)}
-                    placeholder="Paste Business Requirement Document (BRD) or Jira story scope..."
+                    placeholder="Paste Business Requirement Document (BRD) or Jira story scope, or upload a Word .docx file above..."
                     style={{
                       width: "100%",
                       padding: "16px",
@@ -1653,9 +1719,10 @@ const WorkspaceHub = ({ activeTab = "overview" }) => {
                     <div>
                       <label style={LABEL_STYLE}>Active Model Engine</label>
                       <select value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} style={INPUT_STYLE}>
-                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Default - Ultra fast)</option>
-                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep AST analysis)</option>
+                        <option value="gemini-3.6-flash">Gemini 3.6 Flash (Default - Ultra fast & State-of-the-art)</option>
                         <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep AST analysis)</option>
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                       </select>
                     </div>
                   </div>

@@ -26,7 +26,7 @@ const menuItems = [
 
 const Sidebar = () => {
   return (
-    <aside style={{ width: "250px", background: "rgba(15, 23, 42, 0.78)", borderRight: "1px solid rgba(255,255,255,0.08)", minHeight: "calc(100vh - 72px)", padding: "22px 14px", backdropFilter: "blur(12px)" }}>
+    <aside style={{ width: "250px", background: "rgba(12, 18, 35, 0.65)", borderRight: "1px solid rgba(255,255,255,0.1)", minHeight: "calc(100vh - 72px)", padding: "22px 14px", backdropFilter: "blur(16px)" }}>
       <div style={{ padding: "10px 12px", borderRadius: "14px", background: "rgba(79, 70, 229, 0.12)", border: "1px solid rgba(129, 140, 248, 0.2)", marginBottom: "18px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#C7D2FE", fontSize: "12px", fontWeight: 700, letterSpacing: "1px" }}>
           <Sparkles size={12} /> AI WORKSPACE

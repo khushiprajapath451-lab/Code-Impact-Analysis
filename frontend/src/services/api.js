@@ -17,6 +17,50 @@ export const loginUser = async (email, password) => {
   return data;
 };
 
+export const sendRegistrationOtp = async (email, name) => {
+  const response = await fetch('/api/auth/send-registration-otp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to send verification code');
+  return data;
+};
+
+export const verifyAndRegister = async ({ name, email, password, role, otp }) => {
+  const response = await fetch('/api/auth/verify-and-register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, password, role, otp }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Verification & Registration failed');
+  return data;
+};
+
+export const sendForgotPasswordOtp = async (email) => {
+  const response = await fetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to send password reset code');
+  return data;
+};
+
+export const resetPasswordWithOtp = async (email, otp, newPassword) => {
+  const response = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, otp, newPassword }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to reset password');
+  return data;
+};
+
 export const registerUser = async (name, email, password, role) => {
   const response = await fetch('/api/auth/register', {
     method: 'POST',
@@ -94,12 +138,12 @@ export const analyzeImpact = async (brdText, repoId = 'repo-1', requirementId = 
   return synthesizeClientImpact(brdText, customFiles, requirementId);
 };
 
-export const preReviewCode = async (rawGitDiff, requirementId = 'JIRA-241') => {
+export const preReviewCode = async (rawGitDiff, requirementId = 'JIRA-241', repoId = 'repo-1') => {
   try {
     const response = await fetch('/api/pre-review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify({ rawGitDiff, requirementId }),
+      body: JSON.stringify({ rawGitDiff, requirementId, repoId }),
     });
 
     if (response.ok) {

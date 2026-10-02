@@ -8,15 +8,19 @@
  *     This is required for HMAC signature verification (GitHub, Stripe).
  *
  *  Endpoints:
- *   POST /webhooks/github  — GitHub push & pull_request events
- *   POST /webhooks/gitlab  — GitLab push & merge_request events
- *   POST /webhooks/jira    — Jira issue lifecycle events
- *   POST /webhooks/stripe  — Stripe payment events
+ *   POST /webhooks/github    — GitHub push & pull_request events
+ *   POST /webhooks/gitlab    — GitLab push & merge_request events
+ *   POST /webhooks/jira      — Jira issue lifecycle events
+ *   POST /webhooks/stripe    — Stripe payment events
+ *   POST /webhooks/simulate  — Simulate GitHub push / PR webhook for testing
+ *   POST /webhooks/test      — Alias for /webhooks/simulate
+ *   GET  /webhooks/health    — Health check endpoint
  */
 
 import express from 'express';
 import {
   handleGitHubWebhook,
+  handleSimulateWebhook,
   handleGitLabWebhook,
   handleJiraWebhook,
   handleStripeWebhook,
@@ -28,6 +32,10 @@ const router = express.Router();
 // Configure in GitHub repo → Settings → Webhooks
 // Events: Push, Pull Request
 router.post('/github', handleGitHubWebhook);
+
+// ── Simulation & Test Endpoints ───────────────────────────────────────────────
+router.post('/simulate', handleSimulateWebhook);
+router.post('/test', handleSimulateWebhook);
 
 // ── GitLab ────────────────────────────────────────────────────────────────────
 // Configure in GitLab project → Settings → Webhooks
@@ -52,6 +60,8 @@ router.get('/health', (req, res) => {
     message: 'Webhook listener is active',
     endpoints: {
       github: 'POST /webhooks/github',
+      simulate: 'POST /webhooks/simulate',
+      test: 'POST /webhooks/test',
       gitlab: 'POST /webhooks/gitlab',
       jira:   'POST /webhooks/jira',
       stripe: 'POST /webhooks/stripe',

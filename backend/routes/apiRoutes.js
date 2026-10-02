@@ -11,11 +11,31 @@ import {
   handleDeleteExplicitFile,
   handleClearAllRepoFiles,
 } from '../controllers/repoController.js';
-import { handleRegister, handleLogin, handleGetMe, handleUpdateIntegrations } from '../controllers/authController.js';
+import {
+  handleRegister,
+  handleSendRegistrationOTP,
+  handleVerifyAndRegister,
+  handleForgotPassword,
+  handleResetPassword,
+  handleLogin,
+  handleGetMe,
+  handleUpdateIntegrations,
+} from '../controllers/authController.js';
+import {
+  handleListGitHubRepos,
+  handleAutoSetupWebhook,
+  handleAutoSyncAllWebhooks,
+  handleGetWebhookStatus,
+} from '../controllers/githubController.js';
+import { handleSimulateWebhook } from '../controllers/webhookController.js';
 
 const router = express.Router();
 
 // Authentication Routes
+router.post('/auth/send-registration-otp', handleSendRegistrationOTP);
+router.post('/auth/verify-and-register', handleVerifyAndRegister);
+router.post('/auth/forgot-password', handleForgotPassword);
+router.post('/auth/reset-password', handleResetPassword);
 router.post('/auth/register', handleRegister);
 router.post('/auth/login', handleLogin);
 router.get('/auth/me', handleGetMe);
@@ -29,6 +49,16 @@ router.get('/repositories', handleGetRepositories);
 router.post('/repositories/scan', handleScanRepository);
 router.get('/dashboard/stats', handleGetDashboardStats);
 router.get('/history', handleGetHistory);
+
+// GitHub 1-Click Integration & Management
+router.get('/github/repos', handleListGitHubRepos);
+router.post('/github/auto-setup-webhook', handleAutoSetupWebhook);
+router.post('/github/sync-all-webhooks', handleAutoSyncAllWebhooks);
+router.get('/github/webhook-status', handleGetWebhookStatus);
+
+// Webhook Simulation & Testing API
+router.post('/webhooks/simulate', handleSimulateWebhook);
+router.post('/webhooks/test', handleSimulateWebhook);
 
 // Explicit Code Files Management
 router.get('/repositories/files', handleGetRepoFiles);
@@ -54,7 +84,7 @@ router.post('/review', handlePreReview);
 // 404 handler for API routes
 router.use((req, res) => {
   res.status(404).json({
-    error: `API route '${req.method} ${req.originalUrl}' not found. Available endpoints: POST /api/impact-analysis, POST /api/pre-review, GET /api/repositories/files`,
+    error: `API route '${req.method} ${req.originalUrl}' not found. Available endpoints: POST /api/impact-analysis, POST /api/pre-review, GET /api/repositories/files, GET /api/github/repos`,
   });
 });
 

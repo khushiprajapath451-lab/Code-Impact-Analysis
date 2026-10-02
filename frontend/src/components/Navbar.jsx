@@ -17,9 +17,9 @@ const Navbar = () => {
     <header
       style={{
         height: "72px",
-        background: "rgba(7, 17, 31, 0.92)",
+        background: "rgba(10, 15, 30, 0.75)",
         backdropFilter: "blur(20px)",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        borderBottom: "1px solid rgba(255,255,255,0.12)",
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",

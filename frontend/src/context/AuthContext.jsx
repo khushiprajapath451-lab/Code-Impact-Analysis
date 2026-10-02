@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { loginUser, registerUser, fetchCurrentUser } from '../services/api';
+import { loginUser, registerUser, fetchCurrentUser, sendRegistrationOtp, verifyAndRegister } from '../services/api';
 
 const AuthContext = createContext();
 
@@ -51,6 +51,37 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const requestOtp = async (email, name) => {
+    setLoading(true);
+    setAuthError(null);
+    try {
+      const data = await sendRegistrationOtp(email, name);
+      return data;
+    } catch (err) {
+      setAuthError(err.message || 'Failed to send OTP code');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyAndCreateAccount = async ({ name, email, password, role, otp }) => {
+    setLoading(true);
+    setAuthError(null);
+    try {
+      const data = await verifyAndRegister({ name, email, password, role, otp });
+      setUser(data.user);
+      localStorage.setItem('impactiq_user', JSON.stringify(data.user));
+      localStorage.setItem('impactiq_token', data.token);
+      return data.user;
+    } catch (err) {
+      setAuthError(err.message || 'Verification failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const register = async (name, email, password, role) => {
     setLoading(true);
     setAuthError(null);
@@ -83,6 +114,8 @@ export const AuthProvider = ({ children }) => {
         authError,
         login,
         register,
+        requestOtp,
+        verifyAndCreateAccount,
         logout,
       }}
     >

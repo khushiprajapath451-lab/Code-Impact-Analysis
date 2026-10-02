@@ -1,27 +1,34 @@
 import { useState } from "react";
 import { Layers } from "lucide-react";
 
-const DEFAULT_NODES = [
-  { id: "req", name: "JIRA-241", type: "Requirement", x: 60, y: 150, color: "#818CF8" },
-  { id: "ctrl", name: "checkoutController.js", type: "Controller", x: 280, y: 80, color: "#3B82F6" },
-  { id: "svc", name: "discountService.js", type: "Service", x: 280, y: 220, color: "#F59E0B" },
-  { id: "model", name: "Order.js", type: "Model", x: 500, y: 80, color: "#22C55E" },
-  { id: "test", name: "checkout.test.js", type: "Test Suite", x: 500, y: 220, color: "#EC4899" },
-];
-
-const DEFAULT_EDGES = [
-  { from: "req", to: "ctrl" },
-  { from: "req", to: "svc" },
-  { from: "ctrl", to: "model" },
-  { from: "ctrl", to: "test" },
-  { from: "svc", to: "test" },
-];
-
 const DependencyGraph = ({ graphData }) => {
   const [activeNode, setActiveNode] = useState(null);
 
-  const nodes = graphData?.nodes && graphData.nodes.length > 0 ? graphData.nodes : DEFAULT_NODES;
-  const edges = graphData?.edges && graphData.edges.length > 0 ? graphData.edges : DEFAULT_EDGES;
+  const nodes = Array.isArray(graphData?.nodes) ? graphData.nodes : [];
+  const edges = Array.isArray(graphData?.edges) ? graphData.edges : [];
+
+  if (nodes.length === 0) {
+    return (
+      <div
+        style={{
+          background: "#111827",
+          borderRadius: "15px",
+          padding: "36px 20px",
+          textAlign: "center",
+          border: "1px solid rgba(255,255,255,0.06)",
+          color: "#9CA3AF",
+        }}
+      >
+        <Layers size={30} color="#818CF8" style={{ margin: "0 auto 10px", display: "block", opacity: 0.7 }} />
+        <h4 style={{ margin: "0 0 6px", color: "#E2E8F0", fontSize: "14.5px", fontWeight: 600 }}>
+          No Dependency Graph Data
+        </h4>
+        <p style={{ margin: 0, fontSize: "12.5px", color: "#94A3B8" }}>
+          Run an impact analysis with indexed files to visualize AST call chains and blast radius.
+        </p>
+      </div>
+    );
+  }
 
   const getNode = (id) => nodes.find((n) => n.id === id);
 

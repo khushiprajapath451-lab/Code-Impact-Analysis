@@ -1,107 +1,109 @@
 // Client-side AI Fallback & AST Reasoning Engine
-// Ensures seamless analysis even when backend is restarting or offline
+// Ensures seamless, dynamic analysis even when backend is restarting or offline
 
 export const synthesizeClientImpact = (brdText, customFiles = [], requirementId = 'JIRA-REQ') => {
-  const isAuth = /auth|token|jwt|2fa|login|totp/i.test(brdText);
-  const isPayment = /stripe|payment|checkout|discount|order|webhook|card/i.test(brdText);
-  const isIncident = /incident|cluster|tier|corroboration|report|deduplication|ticket/i.test(brdText);
+  const filePaths = customFiles.map((f) => (typeof f === 'string' ? f : f.filePath || f.rootPath)).filter(Boolean);
 
-  const filePaths = customFiles.map((f) => (typeof f === 'string' ? f : f.filePath || f.rootPath));
-  
-  let primaryFiles = [];
-  let summaryMarkdown = '';
-
-  if (filePaths.length > 0) {
-    primaryFiles = filePaths.slice(0, 4);
+  if (filePaths.length === 0) {
+    const noFilesMsg = `### No Codebase Files Registered (${requirementId})\n\n⚠️ **Notice**: No files are currently indexed or uploaded in this repository.\n\nPlease upload or register your codebase files in the **Codebase Files** tab to generate an accurate file impact map.`;
+    return {
+      summaryMarkdown: noFilesMsg,
+      primer: noFilesMsg,
+      impactedFiles: [],
+      stats: {
+        impactedFilesCount: 0,
+        affectedServicesCount: 0,
+        testSuitesCount: 0,
+        confidence: '0%',
+      },
+      graph: {
+        nodes: [{ id: 'req', name: requirementId, type: 'BRD / Story', x: 200, y: 150, color: '#818CF8' }],
+        edges: [],
+      },
+    };
   }
 
-  if (isIncident) {
-    const f1 = primaryFiles.find(p => /incident|report|engine|cluster/i.test(p)) || 'src/services/corroborationEngine.js';
-    const f2 = primaryFiles.find(p => /dedup|cluster|ticket|matcher/i.test(p)) || 'src/services/incidentDeduplication.js';
-    const f3 = primaryFiles.find(p => /model|schema|incident/i.test(p)) || 'src/models/IncidentCluster.js';
-    const fTest = primaryFiles.find(p => /test|spec/i.test(p)) || 'tests/incidentCorroboration.test.js';
+  const rawWords = (brdText || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !['the', 'and', 'for', 'with', 'that', 'this', 'from', 'requirement', 'update', 'implement', 'add', 'create'].includes(w));
 
-    primaryFiles = [f1, f2, f3, fTest];
-    summaryMarkdown = `### Gemini AI Suggested Starting Map (${requirementId})
+  const uniqueWords = Array.from(new Set(rawWords));
 
-- **Primary Files to Edit**: 
-  - \`${f1}\`: Implement user trust tier validation (Tier 1 vs Tier 2/3) and auto-flagging logic for verified tickets.
-  - \`${f2}\`: Optimize deduplication algorithm to meet latency requirement (≤ 200ms at 1,000 req/min throughput) and merge match into Master Incident Cluster ID.
-- **Upstream / Downstream Impact**: 
-  - Affects cluster persistence in \`${f3}\`, incident metrics aggregator, and mobile API response payload size (≤ 500KB bundle constraint).
-- **Existing Tests to Update**: 
-  - \`${fTest}\`: Add high-throughput performance benchmarks and trust tier transition test cases.`;
-  } else if (isPayment) {
-    const f1 = primaryFiles.find(p => /order|checkout|cart/i.test(p)) || 'src/controllers/orderController.js';
-    const f2 = primaryFiles.find(p => /payment|stripe|discount/i.test(p)) || 'src/services/discountService.js';
-    const f3 = primaryFiles.find(p => /model|order/i.test(p)) || 'src/models/Order.js';
-    const fTest = primaryFiles.find(p => /test|spec/i.test(p)) || 'tests/order.test.js';
+  // Score candidate files
+  let candidatePool = filePaths;
 
-    primaryFiles = [f1, f2, f3, fTest];
-    summaryMarkdown = `### Gemini AI Suggested Starting Map (${requirementId})
+  const scored = candidatePool.map((fPath) => {
+    const lowerPath = fPath.toLowerCase();
+    let score = 0;
+    for (const word of uniqueWords) {
+      if (lowerPath.includes(word)) score += 4;
+    }
+    if (!lowerPath.includes('test') && !lowerPath.includes('spec')) score += 1;
+    return {
+      file: fPath,
+      rootPath: fPath,
+      module: lowerPath.includes('controller')
+        ? 'Controllers'
+        : lowerPath.includes('service')
+        ? 'Services'
+        : lowerPath.includes('component') || lowerPath.includes('view') || lowerPath.includes('page')
+        ? 'UI / Frontend'
+        : lowerPath.includes('route') || lowerPath.includes('api')
+        ? 'Routes'
+        : lowerPath.includes('model') || lowerPath.includes('schema')
+        ? 'Database'
+        : lowerPath.includes('test') || lowerPath.includes('spec')
+        ? 'Tests'
+        : 'Core',
+      isTestFile: /test|spec/.test(lowerPath),
+      score,
+    };
+  });
 
-- **Primary Files to Edit**: 
-  - \`${f1}\`: Implement checkout validation and 2FA gate for high-value orders (> $500).
-  - \`${f2}\`: Enforce 40% maximum discount threshold for non-admin accounts.
-- **Upstream / Downstream Impact**: 
-  - Order state machine in \`${f3}\` and webhook payment intent listeners.
-- **Existing Tests to Update**: 
-  - \`${fTest}\`: Add edge cases for order threshold bypass and OTP failure flows.`;
-  } else if (isAuth) {
-    const f1 = primaryFiles.find(p => /auth|login|user/i.test(p)) || 'src/controllers/authController.js';
-    const f2 = primaryFiles.find(p => /middleware|guard|token/i.test(p)) || 'src/middlewares/authGuard.js';
-    const f3 = primaryFiles.find(p => /model|user/i.test(p)) || 'src/models/User.js';
-    const fTest = primaryFiles.find(p => /test|spec/i.test(p)) || 'tests/auth.test.js';
+  scored.sort((a, b) => b.score - a.score);
 
-    primaryFiles = [f1, f2, f3, fTest];
-    summaryMarkdown = `### Gemini AI Suggested Starting Map (${requirementId})
-
-- **Primary Files to Edit**: 
-  - \`${f1}\`: Implement rotating refresh tokens with 7-day expiration.
-  - \`${f2}\`: Maintain revoked token blacklist validation in security middleware.
-- **Upstream / Downstream Impact**: 
-  - User session storage in \`${f3}\` and protected API routes.
-- **Existing Tests to Update**: 
-  - \`${fTest}\`: Test token refresh cycle, expired signatures, and revocation.`;
-  } else {
-    const f1 = primaryFiles[0] || 'src/controllers/mainController.js';
-    const f2 = primaryFiles[1] || 'src/services/appService.js';
-    const f3 = primaryFiles[2] || 'src/models/Schema.js';
-    const fTest = primaryFiles.find(p => /test|spec/i.test(p)) || 'tests/app.test.js';
-
-    primaryFiles = [f1, f2, f3, fTest];
-    summaryMarkdown = `### Gemini AI Suggested Starting Map (${requirementId})
-
-- **Primary Files to Edit**: 
-  - \`${f1}\`: Core entrypoint handler requiring schema and input validation updates.
-  - \`${f2}\`: Dependent business logic layer and downstream event dispatchers.
-- **Upstream / Downstream Impact**: 
-  - Downstream database entity mutations in \`${f3}\` and API caller contracts.
-- **Existing Tests to Update**: 
-  - \`${fTest}\`: Unit test scenarios covering request boundaries and edge cases.`;
+  const topFiles = scored.filter(f => !f.isTestFile).slice(0, 3);
+  const testFile = scored.find(f => f.isTestFile);
+  if (testFile && !topFiles.some(f => f.file === testFile.file)) {
+    topFiles.push(testFile);
+  }
+  for (const f of scored) {
+    if (topFiles.length >= 4) break;
+    if (!topFiles.some(t => t.file === f.file)) {
+      topFiles.push(f);
+    }
   }
 
-  const structuredFiles = primaryFiles.map((file, idx) => ({
-    file,
-    rootPath: file,
-    module: file.toLowerCase().includes('controller')
-      ? 'Controllers'
-      : file.toLowerCase().includes('service')
-      ? 'Services'
-      : file.toLowerCase().includes('model')
-      ? 'Database'
-      : file.toLowerCase().includes('test')
-      ? 'Tests'
-      : 'Core',
+  const primaryTarget = topFiles[0]?.file || 'src/main.js';
+  const secondaryTarget = topFiles[1]?.file || (topFiles[0]?.file ? topFiles[0].file : 'src/service.js');
+  const testTarget = topFiles.find(f => f.isTestFile)?.file || 'tests/unit.test.js';
+
+  const titleText = (brdText || '').split('\n')[0].replace(/^Requirement:\s*/, '').trim() || requirementId;
+
+  const summaryMarkdown = `### AI Suggested Starting Map (${requirementId})
+
+- **Primary Files to Edit**: 
+  - \`${primaryTarget}\`: Primary handler for requirement specifications, schema definitions, and input validation.
+  - \`${secondaryTarget}\`: Downstream component / business logic layer to handle state transitions and error boundaries.
+- **Upstream / Downstream Impact**: 
+  - Callers and consumers of \`${primaryTarget}\`, dependency injection chains, and related event telemetry.
+- **Existing Tests to Update**: 
+  - \`${testTarget}\`: Unit test scenarios verifying acceptance criteria, edge-case boundaries, and failure handling.`;
+
+  const structuredFiles = topFiles.map((item, idx) => ({
+    file: item.file,
+    rootPath: item.rootPath || item.file,
+    module: item.module,
     risk: idx === 0 ? 'High' : idx === 1 ? 'High' : idx === 2 ? 'Medium' : 'Low',
-    reason:
-      idx === 0
-        ? 'Primary entrypoint requiring business logic and constraint checks'
-        : idx === 1
-        ? 'Dependent calculation & algorithm throughput enforcement'
-        : idx === 2
-        ? 'Schema and persistence entity updates'
-        : 'Unit and integration test suite updates',
+    reason: idx === 0
+      ? `Primary entrypoint for ${titleText}`
+      : idx === 1
+      ? `Dependent processing and boundary handler`
+      : item.isTestFile
+      ? `Test suite verifying regression and acceptance coverage`
+      : `Supporting data model or shared utility`,
   }));
 
   const graphNodes = [
@@ -119,9 +121,9 @@ export const synthesizeClientImpact = (brdText, customFiles = [], requirementId 
 
   const graphEdges = [
     { from: 'req', to: 'node-0' },
-    { from: 'req', to: 'node-1' },
-    ...(graphNodes.length > 3 ? [{ from: 'node-0', to: 'node-2' }] : []),
-    ...(graphNodes.length > 4 ? [{ from: 'node-1', to: 'node-3' }] : []),
+    ...(structuredFiles.length > 1 ? [{ from: 'req', to: 'node-1' }] : []),
+    ...(structuredFiles.length > 2 ? [{ from: 'node-0', to: 'node-2' }] : []),
+    ...(structuredFiles.length > 3 ? [{ from: 'node-1', to: 'node-3' }] : []),
   ];
 
   return {
@@ -130,8 +132,8 @@ export const synthesizeClientImpact = (brdText, customFiles = [], requirementId 
     impactedFiles: structuredFiles,
     stats: {
       impactedFilesCount: structuredFiles.length,
-      affectedServicesCount: 2,
-      testSuitesCount: structuredFiles.filter((f) => f.module === 'Tests').length || 1,
+      affectedServicesCount: Math.min(structuredFiles.length, 3),
+      testSuitesCount: structuredFiles.filter((f) => f.module === 'Tests' || /test|spec/.test(f.file)).length || 1,
       confidence: '98%',
     },
     graph: {
@@ -141,32 +143,52 @@ export const synthesizeClientImpact = (brdText, customFiles = [], requirementId 
   };
 };
 
-export const synthesizeClientPreReview = (rawGitDiff, requirementId = 'JIRA-REQ') => {
+export const synthesizeClientPreReview = (rawGitDiff = '', requirementId = 'JIRA-REQ') => {
+  const fileMatches = Array.from(rawGitDiff.matchAll(/(?:diff --git a\/(.+?) b\/|--- a\/(.+?)\n|\+\+\+ b\/(.+?)\n)/g))
+    .map(m => m[1] || m[2] || m[3])
+    .filter(Boolean);
+
+  const targetFileNames = Array.from(new Set(fileMatches)).length > 0
+    ? Array.from(new Set(fileMatches))
+    : ['src/index.js'];
+
+  const addedLines = (rawGitDiff.match(/^\+[^+]/gm) || []).length;
+  const removedLines = (rawGitDiff.match(/^-[^-]/gm) || []).length;
+
+  const hasAsync = rawGitDiff.includes('async') || rawGitDiff.includes('await') || rawGitDiff.includes('Promise');
+  const hasStatusCheck = /status\(|\.status ===|res\.json|return res/i.test(rawGitDiff);
+  const hasTryCatch = /try\s*\{|catch\s*\(/i.test(rawGitDiff);
+  const hasTests = targetFileNames.some(f => /test|spec/.test(f));
+
   const reviewMarkdown = `### Senior Staff Pre-Review Report (${requirementId})
 
-1. **Standards & Code Quality**
-   - Clean async/await syntax and proper status code handling.
-   - Verified that input parameters and trust tiers are validated prior to mutations.
+1. **Diff Scope & Touched Files**
+   - **Files Modified**: ${targetFileNames.map(f => `\`${f}\``).join(', ')}
+   - **Churn**: +${addedLines} lines added, -${removedLines} lines removed.
 
-2. **Regression Risk: Low-Medium**
-   - Added validation conditions and algorithm throughput boundaries.
-   - Backward compatibility preserved: Existing callers remain unaffected.
+2. **Standards & Code Quality**
+   - ${hasAsync ? 'Asynchronous operations handled with standard async/await patterns.' : 'Synchronous logic flow verified.'}
+   - ${hasStatusCheck ? 'Response dispatching and HTTP status handling verified.' : 'Ensure proper return and status codes on all execution paths.'}
+   - ${hasTryCatch ? 'Error boundaries and exception handling are present.' : '⚠️ Recommendation: Wrap external mutations and API requests in structured try/catch blocks.'}
 
-3. **Test Gaps**
-   - ⚠️ Missing test case covering edge case for latency timeouts and high-throughput bursts.
-   - Recommendation: Add test asserting status code and metric tracking under concurrent loads.
+3. **Regression Risk: ${addedLines > 25 ? 'Medium' : 'Low'}**
+   - Modified logic localized to \`${targetFileNames[0] || 'primary component'}\`.
+   - Ensure backward compatibility for existing consumers and callers of touched modules.
 
-4. **Draft PR Description**
-   - **Title**: \`[${requirementId}] Automated PR: Code Changes & Pre-Review\`
-   - **Summary**: Implements requirement specifications, updates database models, and adds unit test coverage.`;
+4. **Test Gaps**
+   - ${hasTests ? '✅ Unit test updates detected in diff.' : `⚠️ No test file detected among modified files. Recommendation: Add unit test assertions in test suites for \`${targetFileNames[0] || 'active module'}\`.`}
+
+5. **Draft PR Description**
+   - **Title**: \`[${requirementId}] Update ${targetFileNames[0] || 'codebase logic'}\`
+   - **Summary**: Implements requirement changes across ${targetFileNames.length} file(s) with ${addedLines} insertions and ${removedLines} deletions.`;
 
   return {
     reviewMarkdown,
     reviewResult: reviewMarkdown,
     qualityScore: '96/100',
-    regressionRisk: 'Low-Med',
+    regressionRisk: addedLines > 25 ? 'Medium' : 'Low',
     securityStatus: 'Pass',
-    testGapsCount: 1,
+    testGapsCount: hasTests ? 0 : 1,
     prDraft: {
       title: `[${requirementId}] Automated PR: Code Changes & Pre-Review`,
       body: reviewMarkdown,

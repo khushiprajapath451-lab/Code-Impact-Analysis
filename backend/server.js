@@ -1,5 +1,10 @@
-// This is the main server ser.
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -79,8 +84,8 @@ app.use('/api', apiRoutes);
 
 // ── Start Server ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => {
-  console.log(`Backend Server running on http://localhost:${PORT}`);
-  console.log(`Socket.io  listening on  http://localhost:${PORT}`);
-  console.log(`Webhooks   available at  http://localhost:${PORT}/webhooks/health`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Backend Server running on http://127.0.0.1:${PORT}`);
+  console.log(`Socket.io  listening on  http://127.0.0.1:${PORT}`);
+  console.log(`Webhooks   available at  http://127.0.0.1:${PORT}/webhooks/health`);
 });

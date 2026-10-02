@@ -323,7 +323,7 @@ export const AnalysisProvider = ({ children }) => {
     }
   };
 
-  const runCodeReview = async (diff = gitDiff, reqId = requirementId) => {
+  const runCodeReview = async (diff = gitDiff, reqId = requirementId, repoId = selectedRepo?.id) => {
     setIsReviewing(true);
     setReviewError(null);
 
@@ -334,7 +334,7 @@ export const AnalysisProvider = ({ children }) => {
     }));
 
     try {
-      const data = await preReviewCode(diff, reqId);
+      const data = await preReviewCode(diff, reqId, repoId);
       setReviewData(data);
       setReviewResult(data.reviewMarkdown || data.reviewResult);
 

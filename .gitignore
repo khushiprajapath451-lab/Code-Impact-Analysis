@@ -45,3 +45,9 @@ Thumbs.db
 push_to_github.bat
 powershell.cmd
 **/powershell.cmd
+
+# Local data & nested directories
+data/
+**/data/
+Code-Impact-Analysis-*/
+
